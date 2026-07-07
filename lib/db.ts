@@ -19,6 +19,11 @@ function openDb(): Database.Database {
   const dir = ensureDataDir();
   const file = path.join(dir, "toteflow.db");
   const db = new Database(file);
+  // Wait up to 5s if another process holds the write lock. Next.js parallel
+  // worker processes during `next build` all import this module, and without
+  // this the second worker's applySchema() hits SQLITE_BUSY on the first's
+  // CREATE TABLE and the build fails.
+  db.pragma("busy_timeout = 5000");
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = NORMAL");
   db.pragma("foreign_keys = ON");
