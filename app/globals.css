@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  background: radial-gradient(ellipse at top, #0d1422 0%, #05070b 60%);
+  color: #e7edf7;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: #0a0e15; }
+*::-webkit-scrollbar-thumb { background: #1f2837; border-radius: 8px; }
+*::-webkit-scrollbar-thumb:hover { background: #2a3447; }
+
+@layer components {
+  .panel {
+    @apply bg-bg-1/80 border border-line rounded-lg backdrop-blur-sm;
+  }
+  .panel-tight {
+    @apply bg-bg-1 border border-line rounded-md;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono uppercase tracking-wider;
+  }
+  .btn {
+    @apply px-3 py-1.5 rounded-md border border-line bg-bg-2 hover:bg-bg-3 text-ink-0 text-sm transition-colors;
+  }
+  .btn-primary {
+    @apply px-3 py-1.5 rounded-md bg-accent-cyan/20 hover:bg-accent-cyan/30 border border-accent-cyan/40 text-accent-cyan text-sm transition-colors;
+  }
+  .stat-label {
+    @apply text-[10px] uppercase tracking-[0.18em] text-ink-2 font-mono;
+  }
+  .stat-value {
+    @apply font-mono tabular-nums text-ink-0;
+  }
+  .grid-bg {
+    background-image:
+      linear-gradient(rgba(31,40,55,0.35) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(31,40,55,0.35) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  .scanline::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent, rgba(34,211,238,0.04), transparent);
+    pointer-events: none;
+    animation: scan 4s linear infinite;
+  }
+}
