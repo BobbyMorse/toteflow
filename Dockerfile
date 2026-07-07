@@ -20,9 +20,14 @@ RUN npm run build
 # ---- runner ----
 FROM node:20-slim AS runner
 WORKDIR /app
+# tzdata provides the zoneinfo SQLite needs so `date(..., 'localtime')`
+# resolves to the TZ env below, not UTC.
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
+    && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+ENV TZ=America/Los_Angeles
 
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
