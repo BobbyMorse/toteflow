@@ -11,6 +11,8 @@ const config: NextConfig = {
   experimental: { serverActions: { bodySizeLimit: "2mb" } },
   // better-sqlite3 is a native binding — Next.js must not try to bundle it
   serverExternalPackages: ["better-sqlite3"],
+  // Minimal self-contained server bundle for the Fly Docker image
+  output: "standalone",
   basePath,
   // Expose basePath to client code so raw fetch()/EventSource callers can
   // prefix it (Next.js only rewrites next/link + next/image automatically).

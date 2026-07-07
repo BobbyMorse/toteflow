@@ -1,0 +1,13 @@
+node_modules
+.next
+data
+.git
+.gitignore
+.env*
+*.log
+README.md
+tsconfig.tsbuildinfo
+start.bat
+Dockerfile
+.dockerignore
+fly.toml
