@@ -11,8 +11,6 @@ import clsx from "clsx";
 
 function sourceFromRaceId(raceId: string): string {
   if (raceId.startsWith("TVG-")) return "tvg";
-  if (raceId.startsWith("HKJC-")) return "hkjc";
-  if (raceId.startsWith("RA-")) return "racingapi";
   return "unknown";
 }
 
@@ -119,9 +117,6 @@ export default function TicketsPage() {
         <span className="text-ink-1">Source:</span>
         <a href="https://service.tvg.com/graph/v2/query" target="_blank" rel="noreferrer"
            className="font-mono text-accent-cyan hover:underline">service.tvg.com/graph/v2/query</a>
-        <span className="text-ink-2">+</span>
-        <a href="https://racing.hkjc.com/racing/Info/meeting/RaceCard/english/Local/" target="_blank" rel="noreferrer"
-           className="font-mono text-accent-cyan hover:underline">racing.hkjc.com</a>
         <span className="text-ink-2 ml-auto">View the actual upstream response:</span>
         <a href="/api/debug/raw-tvg" target="_blank" rel="noreferrer"
            className="font-mono text-accent-cyan hover:underline">/api/debug/raw-tvg ↗</a>

@@ -1,7 +1,6 @@
-// Deep links to source-of-truth providers so users can confirm a race in
-// the app is the same race showing on TVG / Equibase / HKJC. URLs are
-// best-effort — TVG is an SPA so deep links are unreliable, but landing
-// pages are stable.
+// Deep links so users can (a) actually book the bet on FanDuel Racing and
+// (b) confirm the race in the app matches the TVG live view. TVG is an SPA
+// so deep links are unreliable — landing pages are stable.
 
 export interface VerifyLink {
   label: string;
@@ -15,8 +14,7 @@ export function verificationLinks(opts: {
   raceNumber: number;
   postTime: number;
 }): VerifyLink[] {
-  const { source, trackCode, raceNumber, postTime } = opts;
-  const dateMmDdYyyy = formatDateMmDdYyyy(postTime);
+  const { source, trackCode, raceNumber } = opts;
   const links: VerifyLink[] = [];
 
   if (source === "tvg") {
@@ -52,29 +50,8 @@ export function verificationLinks(opts: {
     });
     links.push({
       label: "Equibase Result",
-      url: `https://www.equibase.com/profiles/Results.cfm?type=Race&trk=${encodeURIComponent(trackCode)}&cy=USA&dt=${encodeURIComponent(dateMmDdYyyy)}&rn=${raceNumber}`,
+      url: `https://www.equibase.com/profiles/Results.cfm?type=Race&trk=${encodeURIComponent(trackCode)}&cy=USA&dt=${encodeURIComponent(formatDateMmDdYyyy(opts.postTime))}&rn=${raceNumber}`,
       description: `Race ${raceNumber} result — official chart`,
-    });
-  }
-
-  if (source === "hkjc") {
-    links.push({
-      label: "HKJC Race Card",
-      url: `https://racing.hkjc.com/racing/info/meeting/RaceCard/english/Local/`,
-      description: `Today's HKJC meeting`,
-    });
-    links.push({
-      label: "HKJC Result",
-      url: `https://racing.hkjc.com/racing/information/english/racing/LocalResults.aspx`,
-      description: `Local results`,
-    });
-  }
-
-  if (source === "racingapi") {
-    links.push({
-      label: "RacingPost",
-      url: `https://www.racingpost.com/racecards/`,
-      description: `Cross-check on Racing Post`,
     });
   }
 

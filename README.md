@@ -22,17 +22,13 @@ npm run dev
 ```
 Open http://localhost:3000.
 
-## Data Providers
-Adapter pattern in [lib/adapters/](lib/adapters/). All real upstream feeds:
+## Data Provider
+Only TVG. Adapter lives in [lib/adapters/tvg.ts](lib/adapters/tvg.ts) — hits TVG's
+open GraphQL endpoint, no auth. TVG carries US, AU, and commingled international
+thoroughbred pools; that's the whole universe the app models.
 
-| Provider | Status | How to enable |
-|---|---|---|
-| TVG (US/AU/INT&apos;L) | live | open GraphQL — already wired |
-| The Racing API (UK/IRE) | needs key | set `RACING_API_USER` / `RACING_API_PASS` in `.env.local` |
-| Betfair Exchange | needs key | set `BETFAIR_APP_KEY` / `BETFAIR_SESSION_TOKEN` |
-| HKJC | needs HTML parser | implement `listRaces()` in [lib/adapters/hkjc.ts](lib/adapters/hkjc.ts) |
-| Equibase entries | needs scraper | implement `listRaces()` in [lib/adapters/equibase.ts](lib/adapters/equibase.ts) |
-| TwinSpires / FanDuel / NYRA / AmWager | needs scraper | implement `listRaces()` in respective files |
+Booking: FanDuel Racing (same parent as TVG, same pools). Bet cards deep-link to
+racing.fanduel.com. Equibase is used for results verification.
 
 ## Strategy Framework
 Strategies live in [lib/strategies/](lib/strategies/). Each one implements `evaluate(race) → eval | null`.
@@ -58,7 +54,6 @@ survives restart so multi-week experiments work.
 - **SQL:** `sqlite3 data/toteflow.db` — open the raw DB
 
 ## Notes on US betting placement
-TVG, FanDuel Racing, TwinSpires, NYRA Bets, AmWager — none expose betting APIs to retail.
-ToteFlow surfaces deep links to FanDuel Racing&apos;s site on each open bet card, but you
-place the bet manually (log in, find the race, wager). Strategy validation happens in
-paper mode against real TVG odds and real Equibase results.
+FanDuel Racing does not expose a betting API to retail. Each open bet card deep-links
+to racing.fanduel.com — place the bet manually (log in, find the race, wager).
+Strategy validation happens in paper mode against real TVG odds and real Equibase results.
