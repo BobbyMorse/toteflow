@@ -12,7 +12,7 @@ async function snapshot() {
   const races = liveResults.flat();
   races.sort((a, b) => a.postTime - b.postTime);
   const sources = [...new Set(races.map(r => r.source))];
-  return { races, sources, alerts: [] };
+  return { races, sources };
 }
 
 export async function GET(request: Request) {

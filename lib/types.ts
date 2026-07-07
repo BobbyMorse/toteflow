@@ -57,7 +57,7 @@ export interface Race {
   takeout: number;          // WIN-pool takeout (e.g. 0.16). Backward-compat alias for poolTakeout.win.
   poolTakeout?: { win: number; place: number; exotic: number };  // per-pool takeout when known
   phase: Phase;
-  source: string;           // "tvg" | "hkjc" | "racingapi" | ...
+  source: string;           // always "tvg" in production; kept as a string for adapter flexibility
   lastTick: number;
   // How much to trust the EV column. "high" = bet on it, "low" = ignore EV.
   modelQuality?: "high" | "medium" | "low";
@@ -72,16 +72,6 @@ export interface Race {
   // don't have to re-classify. Strategies still call classifyTrack() directly
   // for now — migrate them here later.
   trackType?: TrackType;
-}
-
-export interface Alert {
-  id: string;
-  raceId: string;
-  type: "steam" | "overlay" | "pool-shift" | "scratch" | "phase";
-  severity: "info" | "warn" | "high";
-  title: string;
-  body: string;
-  ts: number;
 }
 
 export interface Ticket {

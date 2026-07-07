@@ -1,7 +1,6 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import Nav from "@/components/Nav";
-import AlertHost from "@/components/AlertHost";
 
 export const metadata: Metadata = {
   title: "ToteFlow — Live Tote Market Intelligence",
@@ -14,7 +13,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen">
         <Nav />
         <main className="max-w-[1600px] mx-auto px-4 pb-24">{children}</main>
-        <AlertHost />
       </body>
     </html>
   );

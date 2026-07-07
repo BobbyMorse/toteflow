@@ -1,12 +1,38 @@
 "use client";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useToteflow } from "@/lib/store";
 import RaceRowItem from "@/components/RaceRowItem";
-import { fmtCountdown, phaseOf } from "@/lib/format";
+import { apiUrl } from "@/lib/api-url";
+import clsx from "clsx";
+
+interface AutobookSummary {
+  totals: {
+    open: number;
+    settled: number;
+    total: number;
+    realizedPL: number;
+    totalStaked: number;
+    roi: number | null;
+  };
+  today: {
+    settled: number;
+    realizedPL: number;
+    totalStaked: number;
+    roi: number | null;
+  };
+  strategies: Array<{ config: { enabled: boolean } }>;
+}
 
 export default function RaceRadar() {
   const races = useToteflow(s => s.races);
-  const alerts = useToteflow(s => s.alerts);
+  const [book, setBook] = useState<AutobookSummary | null>(null);
+
+  useEffect(() => {
+    const load = () => fetch(apiUrl("/api/autobook")).then(r => r.json()).then(setBook).catch(() => {});
+    load();
+    const i = setInterval(load, 5000);
+    return () => clearInterval(i);
+  }, []);
 
   const groups = useMemo(() => {
     const now = Date.now();
@@ -17,29 +43,58 @@ export default function RaceRadar() {
     return { chaos, action, discovery, scheduled };
   }, [races]);
 
+  const liveCount = useMemo(() => races.filter(r => r.postTime - Date.now() > 0).length, [races]);
+
   const stats = useMemo(() => {
-    const live = races.filter(r => r.postTime - Date.now() > 0);
-    const topEV = races.flatMap(r => r.runners.map(rn => ({ r, rn }))).reduce(
-      (a, b) => (b.rn.evPercent > (a?.rn.evPercent ?? -Infinity) ? b : a), null as any);
-    const hottest = races.flatMap(r => r.runners.map(rn => ({ r, rn }))).reduce(
-      (a, b) => (b.rn.steamScore > (a?.rn.steamScore ?? -Infinity) ? b : a), null as any);
-    return { liveCount: live.length, topEV, hottest };
-  }, [races]);
+    if (!book) return null;
+    const enabled = book.strategies.filter(s => s.config.enabled).length;
+    const roi = book.totals.roi;
+    const todayPL = book.today.realizedPL;
+    const todayRoi = book.today.roi;
+    return {
+      roiPct: roi == null ? null : roi * 100,
+      settled: book.totals.settled,
+      totalTickets: book.totals.total,
+      todayPL,
+      todayRoiPct: todayRoi == null ? null : todayRoi * 100,
+      todaySettled: book.today.settled,
+      todayStaked: book.today.totalStaked,
+      openCount: book.totals.open,
+      strategiesEnabled: enabled,
+      strategiesTotal: book.strategies.length,
+    };
+  }, [book]);
 
   return (
     <div className="py-6">
       <header className="flex flex-col gap-4 mb-6">
         <div className="flex items-baseline gap-3 flex-wrap">
           <h1 className="text-2xl font-display font-semibold">Race Radar</h1>
-          <span className="stat-label">Live tote intelligence · {stats.liveCount} races queued</span>
+          <span className="stat-label">Live tote intelligence · {liveCount} races queued</span>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Stat label="Top Overlay" value={stats.topEV ? `+${stats.topEV.rn.evPercent.toFixed(0)}%` : "—"}
-            sub={stats.topEV ? `${stats.topEV.r.trackCode} R${stats.topEV.r.raceNumber} · #${stats.topEV.rn.program}` : ""} accent="text-accent-overlay"/>
-          <Stat label="Steam Leader" value={stats.hottest ? `${Math.round(stats.hottest.rn.steamScore)}/100` : "—"}
-            sub={stats.hottest ? `${stats.hottest.r.trackCode} R${stats.hottest.r.raceNumber} · #${stats.hottest.rn.program}` : ""} accent="text-accent-steam"/>
-          <Stat label="Alerts (5m)" value={alerts.length.toString()} sub="real-time"/>
-          <Stat label="Active Tracks" value={new Set(races.map(r => r.trackCode)).size.toString()} sub="across feeds"/>
+          <Stat
+            label="Overall ROI"
+            value={stats?.roiPct == null ? "—" : `${stats.roiPct >= 0 ? "+" : ""}${stats.roiPct.toFixed(1)}%`}
+            sub={stats ? `${stats.settled} settled · ${stats.totalTickets} total` : ""}
+            accent={stats?.roiPct == null ? "text-ink-2" : stats.roiPct >= 0 ? "text-accent-overlay" : "text-accent-steam"}
+          />
+          <Stat
+            label="Today P/L"
+            value={stats == null ? "—" : `${stats.todayPL >= 0 ? "+" : ""}$${stats.todayPL.toFixed(2)}`}
+            sub={stats ? `${stats.todaySettled} settled · $${stats.todayStaked.toFixed(0)} staked` : ""}
+            accent={stats == null ? "text-ink-2" : stats.todayPL >= 0 ? "text-accent-overlay" : "text-accent-steam"}
+          />
+          <Stat
+            label="Open Tickets"
+            value={stats?.openCount?.toString() ?? "—"}
+            sub="in flight"
+          />
+          <Stat
+            label="Strategies Live"
+            value={stats == null ? "—" : `${stats.strategiesEnabled}/${stats.strategiesTotal}`}
+            sub="enabled"
+          />
         </div>
       </header>
 
@@ -55,7 +110,7 @@ function Stat({ label, value, sub, accent = "text-ink-0" }: { label: string; val
   return (
     <div className="panel p-3">
       <div className="stat-label">{label}</div>
-      <div className={`mt-1 text-2xl font-display font-semibold ${accent}`}>{value}</div>
+      <div className={clsx("mt-1 text-2xl font-display font-semibold", accent)}>{value}</div>
       {sub && <div className="text-[11px] text-ink-2 font-mono mt-0.5">{sub}</div>}
     </div>
   );
