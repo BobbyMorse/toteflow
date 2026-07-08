@@ -171,25 +171,47 @@ export default function TicketsPage() {
         );
       })()}
 
-      {/* SETTLED HISTORY — compact rows. Excludes both open (above) and staged
-          (still pending decision). Aborted tickets show up here so the user can
-          audit how often the optimal-timer saved them from -EV fires. */}
+      {/* SETTLED HISTORY — today only. Older rows live in /stats (day-by-day
+          rollup) and /analytics (per-strategy deep dive); duplicating the full
+          settled log here just made this tab scroll forever. */}
       {loading ? <div className="text-ink-2">Loading…</div>
         : tickets.length === 0 ? (
           <div className="panel p-10 text-center text-ink-2">
             No tickets yet. Strategies fire automatically when their thresholds are met.
             <div className="mt-3"><Link className="btn-primary" href="/">Open Race Radar</Link></div>
           </div>
-        ) : (
-          <section>
-            <h2 className="text-sm font-semibold mb-2">History</h2>
-            <div className="panel divide-y divide-line/40">
-              {tickets
-                .filter(t => t.status === "won" || t.status === "lost" || t.status === "void")
-                .map(t => <TicketRow key={t.id} ticket={t}/>)}
-            </div>
-          </section>
-        )}
+        ) : (() => {
+          const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+          const todayStartMs = startOfToday.getTime();
+          const todayHistory = tickets.filter(t =>
+            (t.status === "won" || t.status === "lost" || t.status === "void")
+            && t.placedAt >= todayStartMs);
+          return (
+            <section>
+              <div className="flex items-baseline justify-between gap-3 flex-wrap mb-2">
+                <h2 className="text-sm font-semibold">History — today</h2>
+                <div className="text-[11px] text-ink-2">
+                  Older days: <Link href="/stats" className="text-accent-cyan hover:underline">Results</Link>
+                  {" · "}
+                  <Link href="/analytics" className="text-accent-cyan hover:underline">Analytics</Link>
+                </div>
+              </div>
+              {todayHistory.length === 0 ? (
+                <div className="panel p-6 text-center text-ink-2 text-sm">
+                  Nothing settled today yet.
+                  <div className="mt-2 text-[11px]">
+                    See <Link href="/stats" className="text-accent-cyan hover:underline">Results</Link> for prior days
+                    or <Link href="/analytics" className="text-accent-cyan hover:underline">Analytics</Link> for per-strategy breakdown.
+                  </div>
+                </div>
+              ) : (
+                <div className="panel divide-y divide-line/40">
+                  {todayHistory.map(t => <TicketRow key={t.id} ticket={t}/>)}
+                </div>
+              )}
+            </section>
+          );
+        })()}
     </div>
   );
 }
