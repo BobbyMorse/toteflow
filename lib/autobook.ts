@@ -245,7 +245,31 @@ class Engine {
       const cfg = AutoBook.strategyConfig(t.strategyId ?? "");
       const isShadow = Tickets.hasRealBet(t.raceId, t.type, t.selections);
       const liveOdds = runner.currentOdds;
-      const liveEv = runner.evPercent;
+      // Re-evaluate the originating strategy so capturedEV reflects the
+      // strategy's own calibration at fire-time odds, not the adapter's raw
+      // model blend. runner.evPercent is the adapter's blend (e.g.
+      // MODEL_WEIGHT=0.65 for TVG "high" quality); strategies like
+      // tvg-baseline explicitly recalibrate to a lower weight because the raw
+      // blend is overconfident. Using runner.evPercent here produced ticket
+      // rows showing +60% when the strategy's reason string said +20%.
+      const originStrategy = strategies.find(s => s.id === t.strategyId) ?? null;
+      let calibratedEv: number | null = null;
+      let calibratedReason: string | null = null;
+      if (originStrategy) {
+        try {
+          const reeval = originStrategy.evaluate(race);
+          if (reeval && reeval.selection === selection && reeval.type === t.type) {
+            calibratedEv = reeval.evPercent;
+            calibratedReason = reeval.reason;
+          }
+        } catch (e) {
+          this.note(`${originStrategy.id} re-eval error on ${race.id}: ${(e as Error).message}`);
+        }
+      }
+      // Fall back to the staged (strategy-calibrated) EV if the strategy
+      // no longer matches — never fall back to runner.evPercent, which is
+      // the uncalibrated adapter value we're specifically avoiding.
+      const liveEv = calibratedEv ?? t.capturedEV;
       const liveEvRaw = runner.evPercentRaw;
 
       if (isExoticInRace) {
@@ -285,6 +309,7 @@ class Engine {
         potentialPayout: liveStake * liveOdds,
         placedAt: now,
         shadow: isShadow || undefined,
+        ...(calibratedReason ? { reason: calibratedReason } : {}),
       });
       promoted++;
       this.note(
