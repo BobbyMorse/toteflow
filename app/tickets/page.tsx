@@ -1169,7 +1169,7 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
     i === 0 ? "1st" : i === 1 ? "2nd" : i === 2 ? "3rd" : `${i + 1}th`;
   const myFinishLabel = myFinishIdx >= 0 ? ordinal(myFinishIdx) : null;
   return (
-    <div className="px-3 sm:px-4 py-3 text-sm">
+    <div className="px-3 sm:px-4 py-3 sm:py-2 text-sm">
       {/* MOBILE: stacked card. DESKTOP: 9-column grid (unchanged). */}
       <div className="sm:hidden space-y-2">
         <div className="flex items-start justify-between gap-2">
@@ -1373,12 +1373,12 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
         </span>
       </div>
       {t.reason && (
-        <div className="hidden sm:block mt-1 sm:ml-[280px] text-[11px] text-ink-2 italic truncate">
+        <div className="hidden sm:block mt-0.5 sm:ml-[280px] text-[11px] text-ink-2 italic truncate">
           {t.reason}
         </div>
       )}
       {settled && finishOrder.length > 0 && (
-        <div className="mt-1 sm:ml-[280px] text-[11px] font-mono text-ink-2 flex flex-wrap items-baseline gap-x-2">
+        <div className="mt-0.5 sm:ml-[280px] text-[11px] font-mono text-ink-2 flex flex-wrap items-baseline gap-x-2">
           <span className="uppercase tracking-wider">finish:</span>
           {finishOrder.map((p, i) => (
             <span key={i} className={clsx(
@@ -1386,30 +1386,59 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
                 ? (t.status === "won" ? "text-accent-overlay font-semibold" : "text-accent-warn font-semibold")
                 : "text-ink-1",
             )}>
-              {i + 1}. #{p}{i < finishOrder.length - 1 ? "" : ""}
+              {i + 1}. #{p}
             </span>
           ))}
           {myFinishLabel
-            ? <span className="text-ink-2">· your pick #{myPick} finished {myFinishLabel}</span>
-            : (myPick && <span className="text-ink-2">· your pick #{myPick} off the board</span>)}
+            ? <span className="text-ink-2">· pick #{myPick} → {myFinishLabel}</span>
+            : (myPick && <span className="text-ink-2">· pick #{myPick} off board</span>)}
+          <VerifyLinksInline ticket={t} settled={settled} />
         </div>
       )}
-      <VerifyLinks ticket={t} />
+      {!settled && finishOrder.length === 0 && <VerifyLinks ticket={t} />}
     </div>
   );
 }
 
-function VerifyLinks({ ticket: t }: { ticket: Ticket }) {
+// For settled/void tickets, only the result chart matters — pre-race booking
+// and live-simulcast links are dead weight. For open/staged tickets we still
+// show the full set (the user might actually book or watch).
+function relevantVerifyLinks(t: Ticket, settled: boolean) {
   const source = sourceFromRaceId(t.raceId);
-  const links = verificationLinks({
+  const all = verificationLinks({
     source,
     trackCode: t.trackCode ?? "",
     raceNumber: t.raceNumber ?? 0,
     postTime: t.postTime ?? t.placedAt,
   });
+  if (!settled) return all;
+  return all.filter(l => l.label.startsWith("Equibase Result"));
+}
+
+function VerifyLinksInline({ ticket: t, settled }: { ticket: Ticket; settled: boolean }) {
+  const links = relevantVerifyLinks(t, settled);
   if (!links.length) return null;
   return (
-    <div className="mt-1 sm:ml-[280px] text-[10px] flex flex-wrap items-center gap-x-3 gap-y-1">
+    <>
+      <span className="text-ink-2/60">·</span>
+      {links.map(l => (
+        <a key={l.url} href={l.url} target="_blank" rel="noreferrer"
+           title={l.description}
+           className="text-accent-cyan/80 hover:text-accent-cyan hover:underline font-mono">
+          {l.label} ↗
+        </a>
+      ))}
+    </>
+  );
+}
+
+function VerifyLinks({ ticket: t }: { ticket: Ticket }) {
+  // Void/scratched tickets: race didn't run, so keep it minimal. If a result
+  // link exists it's still the best place to confirm the scratch.
+  const links = relevantVerifyLinks(t, true);
+  if (!links.length) return null;
+  return (
+    <div className="mt-0.5 sm:ml-[280px] text-[10px] flex flex-wrap items-center gap-x-3 gap-y-1">
       <span className="text-ink-2 font-mono uppercase tracking-wider">verify:</span>
       {links.map(l => (
         <a key={l.url} href={l.url} target="_blank" rel="noreferrer"
@@ -1418,7 +1447,6 @@ function VerifyLinks({ ticket: t }: { ticket: Ticket }) {
           {l.label} ↗
         </a>
       ))}
-      <span className="text-ink-2 font-mono">raceId={t.raceId}</span>
     </div>
   );
 }
