@@ -10,6 +10,7 @@ const tabs = [
   { href: "/tickets",   label: "Tickets" },
   { href: "/stats",     label: "Results" },
   { href: "/analytics", label: "Analytics" },
+  { href: "/config",    label: "Config" },
 ];
 
 export default function Nav() {
