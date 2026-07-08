@@ -6,11 +6,12 @@ import clsx from "clsx";
 import StreamProvider from "./StreamProvider";
 
 const tabs = [
-  { href: "/",          label: "Race Radar" },
-  { href: "/tickets",   label: "Tickets" },
-  { href: "/stats",     label: "Results" },
-  { href: "/analytics", label: "Analytics" },
-  { href: "/config",    label: "Config" },
+  { href: "/",              label: "Race Radar" },
+  { href: "/tickets",       label: "Tickets" },
+  { href: "/stats",         label: "Results" },
+  { href: "/analytics",     label: "Analytics" },
+  { href: "/config",        label: "Config" },
+  { href: "/how-it-works",  label: "How It Works" },
 ];
 
 export default function Nav() {
