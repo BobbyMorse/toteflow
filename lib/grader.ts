@@ -62,12 +62,17 @@ class Grader {
   inFlight: Promise<void> | null = null;
   intervalMs = 30_000;
   log: { ts: number; msg: string }[] = [];
+  private heartbeat: ReturnType<typeof setInterval> | null = null;
 
   start() {
     if (this.started) return;
     this.started = true;
     this.note("grader started");
     void this.tickIfDue();
+    // Self-scheduled heartbeat so grading runs 24/7 on Fly without an open
+    // browser. tickIfDue() gates real work by intervalMs (30s).
+    this.heartbeat = setInterval(() => { void this.tickIfDue(); }, 5_000);
+    if (typeof (this.heartbeat as any)?.unref === "function") (this.heartbeat as any).unref();
   }
   async tickIfDue(): Promise<void> {
     const now = Date.now();

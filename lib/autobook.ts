@@ -68,12 +68,21 @@ class Engine {
   // Confidence threshold for logging an alert. "medium" or "high" only —
   // "low" detections are noise.
   private carryoverMinConfidence: CarryoverOpportunity["confidence"] = "medium";
+  private heartbeat: ReturnType<typeof setInterval> | null = null;
 
   start() {
     if (this.started) return;
     this.started = true;
     this.note(`autobook engine started · ${strategies.length} strategies`);
     void this.tickIfDue();
+    // Self-scheduled heartbeat — without this, ticks only fire when a browser
+    // hits /api/autobook or /api/stream. On Fly the machine stays running
+    // (min_machines_running=1, auto_stop=off) but nothing drives the engine
+    // when no one's watching, so bets never staged/promoted/settled overnight.
+    // 1s cadence is cheap; tickIfDue() gates the actual work by intervalMs
+    // (adaptive 2–15s based on nearest race).
+    this.heartbeat = setInterval(() => { void this.tickIfDue(); }, 1000);
+    if (typeof (this.heartbeat as any)?.unref === "function") (this.heartbeat as any).unref();
   }
 
   // Adaptive cadence keyed to the closest race. Mirrors the SSE stream's own
