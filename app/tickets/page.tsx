@@ -1048,7 +1048,7 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
         )}
       </div>
 
-      <div className="hidden sm:grid grid-cols-[110px_70px_120px_140px_minmax(220px,1fr)_70px_120px_80px_110px] gap-3 items-center">
+      <div className="hidden sm:grid grid-cols-[100px_60px_110px_110px_minmax(160px,1fr)_60px_100px_74px_100px] gap-3 items-center">
         <span className="font-mono text-xs uppercase tracking-wider text-ink-2 leading-tight flex flex-col">
           <span className="text-ink-1">
             {new Date(t.placedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" })}
@@ -1149,12 +1149,12 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
         </span>
       </div>
       {t.reason && (
-        <div className="hidden sm:block mt-0.5 sm:ml-[280px] text-[11px] text-ink-2 italic truncate">
+        <div className="hidden sm:block mt-0.5 sm:ml-[250px] text-[11px] text-ink-2 italic truncate">
           {t.reason}
         </div>
       )}
       {settled && finishOrder.length > 0 && (
-        <div className="mt-0.5 sm:ml-[280px] text-[11px] font-mono text-ink-2 flex flex-wrap items-baseline gap-x-2">
+        <div className="mt-0.5 sm:ml-[250px] text-[11px] font-mono text-ink-2 flex flex-wrap items-baseline gap-x-2">
           <span className="uppercase tracking-wider">finish:</span>
           {finishOrder.map((p, i) => (
             <span key={i} className={clsx(
@@ -1214,7 +1214,7 @@ function VerifyLinks({ ticket: t }: { ticket: Ticket }) {
   const links = relevantVerifyLinks(t, true);
   if (!links.length) return null;
   return (
-    <div className="mt-0.5 sm:ml-[280px] text-[10px] flex flex-wrap items-center gap-x-3 gap-y-1">
+    <div className="mt-0.5 sm:ml-[250px] text-[10px] flex flex-wrap items-center gap-x-3 gap-y-1">
       <span className="text-ink-2 font-mono uppercase tracking-wider">verify:</span>
       {links.map(l => (
         <a key={l.url} href={l.url} target="_blank" rel="noreferrer"
