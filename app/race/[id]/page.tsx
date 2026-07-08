@@ -68,19 +68,19 @@ export default function RaceRoomPage({ params }: { params: Promise<{ id: string 
                                "border-accent-steam/40 bg-accent-steam/10 text-accent-steam";
 
   return (
-    <div className="py-6 space-y-6">
+    <div className="py-4 sm:py-6 space-y-4 sm:space-y-6">
       <Link href="/" className="inline-flex items-center gap-1 text-xs text-ink-2 hover:text-ink-0 font-mono uppercase tracking-wider">← Race Radar</Link>
 
       <header className={clsx(
-        "relative panel p-6 overflow-hidden",
+        "relative panel p-3 sm:p-6 overflow-hidden",
         chaos && "border-accent-steam/60 ring-1 ring-accent-steam/40 animate-chaos-pulse",
       )}>
         <div className={clsx("absolute inset-0 grid-bg opacity-30 pointer-events-none")}/>
-        <div className="relative grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 items-center">
-          <div>
-            <div className="flex items-center gap-3 mb-2 flex-wrap">
-              <div className="px-2.5 py-1 rounded bg-bg-3 font-mono text-sm">{race.trackCode}</div>
-              <h1 className="text-3xl font-display font-semibold">{race.track} · R{race.raceNumber}</h1>
+        <div className="relative grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 sm:gap-4 items-start md:items-center">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 sm:gap-3 mb-2 flex-wrap">
+              <div className="px-2 sm:px-2.5 py-1 rounded bg-bg-3 font-mono text-xs sm:text-sm">{race.trackCode}</div>
+              <h1 className="text-xl sm:text-3xl font-display font-semibold break-words">{race.track} · R{race.raceNumber}</h1>
               <PhaseChip phase={phase} />
               <span className={clsx("chip border", badgeTone)} title={race.trackType ?? "unclassified"}>{badge.label}</span>
               <span className="chip border border-line text-ink-2" title="Field size (non-scratched)">{fieldSize} runners</span>
@@ -98,17 +98,17 @@ export default function RaceRoomPage({ params }: { params: Promise<{ id: string 
                 >model: {race.modelQuality}</span>
               )}
             </div>
-            <div className="text-ink-1 text-sm">{race.distance} · {race.surface} · {race.conditions} {race.purse ? `· $${race.purse.toLocaleString()}` : ""}</div>
-            <div className="mt-3 flex flex-wrap gap-4 text-xs text-ink-2 font-mono">
+            <div className="text-ink-1 text-xs sm:text-sm">{race.distance} · {race.surface} · {race.conditions} {race.purse ? `· $${race.purse.toLocaleString()}` : ""}</div>
+            <div className="mt-3 grid grid-cols-2 sm:flex sm:flex-wrap gap-x-4 gap-y-1 text-[11px] sm:text-xs text-ink-2 font-mono">
               <span>Win Pool: <span className="text-ink-0">{fmtMoney(race.winPoolTotal)}</span></span>
               <span>Exacta: <span className="text-ink-0">{fmtMoney(race.exactaPoolTotal)}</span></span>
               <span>Trifecta: <span className="text-ink-0">{fmtMoney(race.trifectaPoolTotal)}</span></span>
               <span>Takeout: <span className="text-ink-0">{(race.takeout*100).toFixed(1)}%</span></span>
             </div>
           </div>
-          <div className="text-right">
+          <div className="text-left md:text-right">
             <Countdown postTime={race.postTime} size={chaos ? "xl" : "lg"} />
-            <div className="stat-label mt-2">Post {new Date(race.postTime).toLocaleTimeString([], { hour12: false })}</div>
+            <div className="stat-label mt-1 sm:mt-2">Post {new Date(race.postTime).toLocaleTimeString([], { hour12: false })}</div>
           </div>
         </div>
       </header>

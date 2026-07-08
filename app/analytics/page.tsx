@@ -122,13 +122,13 @@ export default function AnalyticsPage() {
   const undecided = sorted.filter(s => s.confidenceLabel === "noise" || s.confidenceLabel === "too-small");
 
   return (
-    <div className="py-6 space-y-8">
+    <div className="py-4 sm:py-6 space-y-6 sm:space-y-8">
       <header className="flex flex-wrap items-baseline justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-display font-semibold">Analytics</h1>
+          <h1 className="text-xl sm:text-2xl font-display font-semibold">Analytics</h1>
           <p className="stat-label">Strategy verdicts, consensus, carryover watch, cumulative P/L.</p>
         </div>
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="text-ink-2 font-mono uppercase tracking-wider">window:</span>
           {[7, 14, 30, 90].map(d => (
             <button key={d} onClick={() => setDays(d)}
@@ -314,8 +314,8 @@ function HeadlineStrip({ t, dataDays }: { t: Stats["totals"]; dataDays: number }
   const plClass = t.realizedPL >= 0 ? "text-accent-overlay" : "text-accent-steam";
   const roiClass = t.roi == null ? "text-ink-0" : t.roi >= 0 ? "text-accent-overlay" : "text-accent-steam";
   return (
-    <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 border-y border-line/40 py-3 text-sm">
-      <span className="text-ink-2">Overall:</span>
+    <div className="flex flex-wrap items-baseline gap-x-4 sm:gap-x-6 gap-y-2 border-y border-line/40 py-3 text-sm">
+      <span className="text-ink-2 w-full sm:w-auto">Overall:</span>
       <span>
         <span className={clsx("font-mono tabular-nums font-semibold text-base", plClass)}>
           {t.realizedPL >= 0 ? "+" : ""}${t.realizedPL.toFixed(0)}
@@ -336,7 +336,7 @@ function HeadlineStrip({ t, dataDays }: { t: Stats["totals"]; dataDays: number }
         <span className="font-mono tabular-nums">{t.hitRate == null ? "—" : `${(t.hitRate * 100).toFixed(0)}%`}</span>
         <span className="text-ink-2 text-xs ml-1">hit rate</span>
       </span>
-      <span className="text-ink-2 text-xs ml-auto">
+      <span className="text-ink-2 text-xs sm:ml-auto w-full sm:w-auto">
         {dataDays.toFixed(1)} days of data
       </span>
     </div>
@@ -390,10 +390,10 @@ function StrategyCard({ s, kind }: { s: StrategyAnalytics; kind: "working" | "lo
                          "border-l-2 border-l-ink-2/30";
 
   return (
-    <div className={clsx("panel p-4 flex flex-wrap items-center gap-x-6 gap-y-3", borderCls)}>
-      <div className="flex-1 min-w-[180px]">
-        <div className="font-mono text-base text-ink-0">{s.id}</div>
-        <div className="text-xs text-ink-2 mt-0.5">
+    <div className={clsx("panel p-3 sm:p-4 flex flex-wrap items-center gap-x-4 sm:gap-x-6 gap-y-3", borderCls)}>
+      <div className="flex-1 min-w-[140px]">
+        <div className="font-mono text-sm sm:text-base text-ink-0 break-all">{s.id}</div>
+        <div className="text-[11px] sm:text-xs text-ink-2 mt-0.5">
           {s.settled} settled{s.open > 0 ? ` · ${s.open} open` : ""} · hit{" "}
           {s.hitRate == null ? "—" : `${(s.hitRate * 100).toFixed(0)}%`}
           {s.avgClv != null && (
@@ -403,10 +403,10 @@ function StrategyCard({ s, kind }: { s: StrategyAnalytics; kind: "working" | "lo
       </div>
 
       <div className="text-right">
-        <div className={clsx("text-2xl font-mono font-semibold tabular-nums", roiCls)}>
+        <div className={clsx("text-lg sm:text-2xl font-mono font-semibold tabular-nums", roiCls)}>
           {s.roi == null ? "—" : `${s.roi >= 0 ? "+" : ""}${(s.roi * 100).toFixed(1)}%`}
         </div>
-        <div className="text-[11px] text-ink-2">
+        <div className="text-[10px] sm:text-[11px] text-ink-2">
           ROI
           {s.roiCI95Low != null && s.roiCI95High != null && (
             <> <span className="font-mono">[{(s.roiCI95Low * 100).toFixed(0)}, {(s.roiCI95High * 100).toFixed(0)}]</span></>
@@ -414,11 +414,11 @@ function StrategyCard({ s, kind }: { s: StrategyAnalytics; kind: "working" | "lo
         </div>
       </div>
 
-      <div className="text-right border-l border-line/40 pl-6">
-        <div className={clsx("text-xl font-mono font-semibold tabular-nums", plCls)}>
+      <div className="text-right border-l border-line/40 pl-3 sm:pl-6">
+        <div className={clsx("text-base sm:text-xl font-mono font-semibold tabular-nums", plCls)}>
           {s.realizedPL >= 0 ? "+" : ""}${s.realizedPL.toFixed(0)}
         </div>
-        <div className="text-[11px] text-ink-2">realized</div>
+        <div className="text-[10px] sm:text-[11px] text-ink-2">realized</div>
       </div>
     </div>
   );

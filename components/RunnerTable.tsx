@@ -8,7 +8,8 @@ import { motion } from "framer-motion";
 export default function RunnerTable({ race }: { race: Race }) {
   const live = race.runners.filter(r => !r.scratched);
   return (
-    <div className="panel overflow-hidden">
+    <div className="panel overflow-x-auto">
+      <div className="min-w-[720px]">
       <div className="grid grid-cols-[40px_minmax(160px,1.5fr)_120px_80px_90px_90px_80px_80px] gap-2 px-3 py-2 text-[10px] uppercase tracking-wider text-ink-2 font-mono border-b border-line bg-bg-2/50">
         <div>#</div>
         <div>Horse / Jockey</div>
@@ -64,6 +65,7 @@ export default function RunnerTable({ race }: { race: Race }) {
           </motion.div>
         );
       })}
+      </div>
     </div>
   );
 }

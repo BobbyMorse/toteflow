@@ -67,13 +67,13 @@ export default function TicketBuilder({ race }: { race: Race }) {
   }
 
   return (
-    <div className="panel p-4">
-      <div className="flex items-center justify-between mb-3">
+    <div className="panel p-3 sm:p-4">
+      <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
         <h3 className="text-sm font-semibold text-ink-0">Ticket Builder</h3>
         <div className="flex gap-1">
           {(["WIN","EXACTA","TRIFECTA"] as BetType[]).map(t => (
             <button key={t} onClick={() => { setType(t); setPicks([]); }}
-              className={clsx("px-2.5 py-1 rounded text-xs font-mono uppercase tracking-wider",
+              className={clsx("px-2 sm:px-2.5 py-1 rounded text-[11px] sm:text-xs font-mono uppercase tracking-wider",
                 type === t ? "bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/40" : "bg-bg-2 text-ink-1 border border-line"
               )}>{t}</button>
           ))}

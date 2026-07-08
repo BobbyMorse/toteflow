@@ -66,13 +66,13 @@ export default function RaceRadar() {
   }, [book]);
 
   return (
-    <div className="py-6">
-      <header className="flex flex-col gap-4 mb-6">
-        <div className="flex items-baseline gap-3 flex-wrap">
-          <h1 className="text-2xl font-display font-semibold">Race Radar</h1>
+    <div className="py-4 sm:py-6">
+      <header className="flex flex-col gap-3 sm:gap-4 mb-4 sm:mb-6">
+        <div className="flex items-baseline gap-2 sm:gap-3 flex-wrap">
+          <h1 className="text-xl sm:text-2xl font-display font-semibold">Race Radar</h1>
           <span className="stat-label">Live tote intelligence · {liveCount} races queued</span>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
           <Stat
             label="Overall ROI"
             value={stats?.roiPct == null ? "—" : `${stats.roiPct >= 0 ? "+" : ""}${stats.roiPct.toFixed(1)}%`}
@@ -108,10 +108,10 @@ export default function RaceRadar() {
 
 function Stat({ label, value, sub, accent = "text-ink-0" }: { label: string; value: string; sub?: string; accent?: string }) {
   return (
-    <div className="panel p-3">
+    <div className="panel p-2.5 sm:p-3">
       <div className="stat-label">{label}</div>
-      <div className={clsx("mt-1 text-2xl font-display font-semibold", accent)}>{value}</div>
-      {sub && <div className="text-[11px] text-ink-2 font-mono mt-0.5">{sub}</div>}
+      <div className={clsx("mt-1 text-lg sm:text-2xl font-display font-semibold", accent)}>{value}</div>
+      {sub && <div className="text-[10px] sm:text-[11px] text-ink-2 font-mono mt-0.5 truncate">{sub}</div>}
     </div>
   );
 }

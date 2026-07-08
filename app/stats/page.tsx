@@ -53,13 +53,13 @@ export default function StatsPage() {
   if (!data) return <div className="py-6 text-ink-2">Loading results…</div>;
 
   return (
-    <div className="py-6 space-y-6">
+    <div className="py-4 sm:py-6 space-y-4 sm:space-y-6">
       <header className="flex flex-wrap items-baseline justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-display font-semibold">Results</h1>
+          <h1 className="text-xl sm:text-2xl font-display font-semibold">Results</h1>
           <p className="stat-label">Day-by-day P/L. Click a day to see every bet placed.</p>
         </div>
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="text-ink-2 font-mono uppercase tracking-wider">window:</span>
           {[7, 14, 30, 90].map(d => (
             <button key={d} onClick={() => setDays(d)}
@@ -121,7 +121,7 @@ function DailyResults({
   return (
     <section>
       <div className="flex items-baseline gap-3 mb-2 flex-wrap">
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-ink-2">
+        <div className="flex flex-wrap items-baseline gap-x-3 sm:gap-x-4 gap-y-1 text-[11px] sm:text-xs text-ink-2 w-full sm:w-auto">
           <span><span className="font-mono tabular-nums text-ink-1">{activeDays.length}</span> active days</span>
           <span className="text-line">·</span>
           <span>
@@ -253,19 +253,21 @@ function CalendarGrid({
   ];
 
   const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const DOW_SHORT = ["S", "M", "T", "W", "T", "F", "S"];
   const today = fmtLocalDay(new Date());
 
   return (
-    <div className="panel p-3">
-      <div className="grid grid-cols-7 gap-1.5">
-        {DOW.map(d => (
+    <div className="panel p-2 sm:p-3">
+      <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
+        {DOW.map((d, i) => (
           <div key={d} className="text-[10px] text-ink-2 font-mono uppercase tracking-wider pb-1 text-center">
-            {d}
+            <span className="hidden sm:inline">{d}</span>
+            <span className="sm:hidden">{DOW_SHORT[i]}</span>
           </div>
         ))}
         {padded.map((cell, i) => {
           if (!cell) {
-            return <div key={`p${i}`} className="aspect-[7/5]" />;
+            return <div key={`p${i}`} className="aspect-square sm:aspect-[7/5]" />;
           }
           const d = parseDayLocal(cell.day);
           const dayNum = d.getDate();
@@ -278,6 +280,9 @@ function CalendarGrid({
           const hasBets = cell.bets > 0;
           const bg = hasBets ? colorForPL(cell.realizedPL, maxAbs) : "transparent";
           const plCls = cell.realizedPL >= 0 ? "text-accent-overlay" : "text-accent-steam";
+          const plCompact = Math.abs(cell.realizedPL) >= 1000
+            ? `${(cell.realizedPL / 1000).toFixed(1)}k`
+            : cell.realizedPL.toFixed(0);
 
           return (
             <button
@@ -289,8 +294,8 @@ function CalendarGrid({
                 : `${cell.day} — no bets`}
               style={{ background: bg }}
               className={clsx(
-                "aspect-[7/5] rounded-md p-2 flex flex-col justify-between text-left border transition",
-                "min-h-[54px]",
+                "aspect-square sm:aspect-[7/5] rounded-md p-1 sm:p-2 flex flex-col justify-between text-left border transition",
+                "min-h-[44px] sm:min-h-[54px] overflow-hidden",
                 isSelected
                   ? "border-accent-cyan ring-1 ring-accent-cyan/40"
                   : hasBets
@@ -299,34 +304,39 @@ function CalendarGrid({
                 !hasBets && "cursor-default opacity-60",
               )}
             >
-              <div className="flex items-baseline justify-between gap-1">
+              <div className="flex items-baseline justify-between gap-0.5">
                 <span className={clsx(
-                  "font-mono text-[11px] tabular-nums",
+                  "font-mono text-[10px] sm:text-[11px] tabular-nums leading-none",
                   isToday ? "text-accent-cyan font-semibold" : "text-ink-2",
                 )}>
-                  {monthLabel ? `${monthLabel} ${dayNum}` : dayNum}
+                  {monthLabel ? (
+                    <>
+                      <span className="hidden sm:inline">{monthLabel} </span>
+                      {dayNum}
+                    </>
+                  ) : dayNum}
                 </span>
                 {hasBets && (
-                  <span className="font-mono text-[9px] text-ink-2 tabular-nums">
+                  <span className="font-mono text-[9px] text-ink-2 tabular-nums leading-none hidden sm:inline">
                     {cell.bets}b
                   </span>
                 )}
               </div>
               {hasBets ? (
-                <div className={clsx("font-mono tabular-nums text-sm font-semibold text-right", plCls)}>
-                  {cell.realizedPL >= 0 ? "+" : ""}${Math.abs(cell.realizedPL) >= 1000
-                    ? `${(cell.realizedPL / 1000).toFixed(1)}k`
-                    : cell.realizedPL.toFixed(0)}
+                <div className={clsx("font-mono tabular-nums font-semibold text-right leading-none", plCls)}>
+                  <span className="text-[10px] sm:text-sm">
+                    {cell.realizedPL >= 0 ? "+" : ""}${plCompact}
+                  </span>
                 </div>
               ) : (
-                <div className="text-[9px] text-ink-2/60 font-mono text-right">—</div>
+                <div className="text-[9px] text-ink-2/60 font-mono text-right leading-none">—</div>
               )}
             </button>
           );
         })}
       </div>
 
-      <div className="flex items-center gap-2 mt-3 text-[10px] text-ink-2 font-mono">
+      <div className="flex flex-wrap items-center gap-2 mt-3 text-[10px] text-ink-2 font-mono">
         <span>loss</span>
         <div className="w-3 h-3 rounded-[2px]" style={{ background: "rgba(239,68,68,0.75)" }}/>
         <div className="w-3 h-3 rounded-[2px]" style={{ background: "rgba(239,68,68,0.35)" }}/>

@@ -25,9 +25,9 @@ export default function Countdown({
   const cls = phaseStyle[phase];
   const sizes = {
     sm: "text-sm",
-    md: "text-2xl",
-    lg: "text-5xl",
-    xl: "text-7xl md:text-8xl",
+    md: "text-xl sm:text-2xl",
+    lg: "text-4xl sm:text-5xl",
+    xl: "text-5xl sm:text-7xl md:text-8xl",
   } as const;
   return (
     <div className={clsx("font-mono tabular-nums leading-none", cls, sizes[size],

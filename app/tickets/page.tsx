@@ -105,28 +105,28 @@ export default function TicketsPage() {
   }
 
   return (
-    <div className="py-6 space-y-6">
-      <header className="flex flex-wrap items-baseline gap-3">
-        <h1 className="text-2xl font-display font-semibold">Tickets</h1>
+    <div className="py-4 sm:py-6 space-y-4 sm:space-y-6">
+      <header className="flex flex-wrap items-baseline gap-2 sm:gap-3">
+        <h1 className="text-xl sm:text-2xl font-display font-semibold">Tickets</h1>
         <span className="stat-label">Strategy leaderboard · settled against TVG results · CLV-tracked.</span>
       </header>
 
       {/* DATA-SOURCE PROVENANCE */}
-      <section className="panel p-3 text-xs flex flex-wrap items-center gap-3">
+      <section className="panel p-3 text-xs flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <span className="text-accent-overlay font-mono">● LIVE</span>
         <span className="text-ink-1">Source:</span>
         <a href="https://service.tvg.com/graph/v2/query" target="_blank" rel="noreferrer"
-           className="font-mono text-accent-cyan hover:underline">service.tvg.com/graph/v2/query</a>
-        <span className="text-ink-2 ml-auto">View the actual upstream response:</span>
+           className="font-mono text-accent-cyan hover:underline break-all">service.tvg.com/graph/v2/query</a>
+        <span className="text-ink-2 sm:ml-auto">View the actual upstream response:</span>
         <a href="/api/debug/raw-tvg" target="_blank" rel="noreferrer"
-           className="font-mono text-accent-cyan hover:underline">/api/debug/raw-tvg ↗</a>
+           className="font-mono text-accent-cyan hover:underline break-all">/api/debug/raw-tvg ↗</a>
       </section>
 
       {/* GLOBAL CONTROL + TOTALS */}
       {state && (
-        <section className={clsx("panel p-5", state.globalEnabled && "ring-1 ring-accent-cyan/30")}>
+        <section className={clsx("panel p-3 sm:p-5", state.globalEnabled && "ring-1 ring-accent-cyan/30")}>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <button onClick={toggleGlobal}
                 className={clsx(
                   "px-3 py-1.5 rounded-md text-sm font-semibold border transition-colors",
@@ -140,7 +140,7 @@ export default function TicketsPage() {
                 {state.strategies.filter(s => s.config.enabled).length} of {state.strategies.length} strategies enabled
               </span>
             </div>
-            <div className="flex flex-wrap items-center gap-4">
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
               <Stat label="Bets fired" value={state.totals.total.toString()}/>
               <Stat label="Staged" value={state.totals.staged.toString()}/>
               <Stat label="Aborted (saved)" value={state.totals.aborted.toString()}/>
@@ -170,8 +170,8 @@ export default function TicketsPage() {
               lifetime average. Without this, a bad day hides inside a multi-week
               hit rate and the user can't see "we're losing right now". */}
           {state.today && state.today.settled > 0 && (
-            <div className="mt-4 pt-3 border-t border-line/40 flex flex-wrap items-center gap-4">
-              <span className="stat-label text-ink-2">Today (last 24h, settled):</span>
+            <div className="mt-4 pt-3 border-t border-line/40 grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-3 sm:gap-4">
+              <span className="stat-label text-ink-2 col-span-2 sm:col-auto">Today (last 24h, settled):</span>
               <Stat label="Bets" value={state.today.settled.toString()}/>
               <Stat label="Won"
                 value={`${state.today.won} / ${state.today.settled}`}
@@ -1019,7 +1019,7 @@ function PLContribution({ strategies }: { strategies: StratStats[] }) {
           const pct = (Math.abs(s.realizedPL) / totalAbsPL) * 100;
           const isWin = s.realizedPL >= 0;
           return (
-            <div key={s.id} className="grid grid-cols-[160px_1fr_110px] items-center gap-3 text-xs">
+            <div key={s.id} className="grid grid-cols-[minmax(0,90px)_1fr_minmax(0,110px)] sm:grid-cols-[160px_1fr_110px] items-center gap-2 sm:gap-3 text-xs">
               <span className="font-mono text-ink-1 truncate">{s.id}</span>
               <div className="h-3 bg-bg-2 rounded-sm overflow-hidden relative">
                 <div className={clsx("h-full",
@@ -1106,9 +1106,9 @@ function StrategyRow({ s, onPatch }: { s: StratStats; onPatch: (p: Partial<Strat
 
 function Stat({ label, value, color = "text-ink-0", title }: { label: string; value: string; color?: string; title?: string }) {
   return (
-    <div className="text-right" title={title}>
+    <div className="text-left sm:text-right" title={title}>
       <div className="stat-label">{label}</div>
-      <div className={`font-mono tabular-nums font-semibold ${color}`}>{value}</div>
+      <div className={`font-mono tabular-nums font-semibold text-sm sm:text-base ${color}`}>{value}</div>
     </div>
   );
 }
@@ -1169,8 +1169,110 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
     i === 0 ? "1st" : i === 1 ? "2nd" : i === 2 ? "3rd" : `${i + 1}th`;
   const myFinishLabel = myFinishIdx >= 0 ? ordinal(myFinishIdx) : null;
   return (
-    <div className="px-4 py-3 text-sm">
-      <div className="grid grid-cols-[110px_70px_120px_140px_minmax(220px,1fr)_70px_120px_80px_110px] gap-3 items-center">
+    <div className="px-3 sm:px-4 py-3 text-sm">
+      {/* MOBILE: stacked card. DESKTOP: 9-column grid (unchanged). */}
+      <div className="sm:hidden space-y-2">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex flex-col min-w-0 gap-0.5">
+            <Link href={`/race/${t.raceId}`} className="font-mono truncate">
+              <span className="text-accent-cyan">
+                {t.trackCode ?? t.raceId} {t.raceNumber ? `R${t.raceNumber}` : ""}
+              </span>
+              {t.trackName && t.trackName !== t.trackCode && (
+                <span className="text-[10px] text-ink-2 normal-case ml-2" title={t.trackName}>
+                  {t.trackName}
+                </span>
+              )}
+            </Link>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-ink-2 leading-tight">
+              {new Date(t.placedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+              {" · "}
+              {new Date(t.placedAt).toLocaleTimeString([], { hour12: false })}
+              {" · "}
+              <span className="normal-case">{t.strategyId ?? "manual"}</span>
+            </span>
+          </div>
+          <div className="flex flex-col items-end gap-0.5 shrink-0">
+            <span className={clsx("chip border",
+              t.shadow
+                ? "border-line/60 bg-bg-1 text-ink-2"
+                : t.mode === "auto"
+                  ? "border-accent-cyan/40 bg-accent-cyan/10 text-accent-cyan"
+                  : "border-line text-ink-2",
+            )} title={t.shadow ? "Shadow: another strategy already covered this bet — tracked for attribution, no bankroll" : undefined}>
+              {t.shadow ? "shadow" : t.mode}
+            </span>
+            {!settled ? (
+              <span className="chip border border-line text-ink-2">{t.status}</span>
+            ) : (
+              <span className={clsx("chip border", t.status === "won"
+                ? "border-accent-overlay/40 bg-accent-overlay/10 text-accent-overlay"
+                : "border-accent-steam/40 bg-accent-steam/10 text-accent-steam")}>
+                {t.status}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <span className="chip border border-line">{t.type}</span>
+          <span className="font-mono">#{t.selections.join("-")}</span>
+          {t.horseName && <span className="text-ink-1">{t.horseName}</span>}
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-xs font-mono tabular-nums">
+          <div>
+            <div className="stat-label">stake</div>
+            <div className="text-ink-0">${t.stake.toFixed(0)}</div>
+          </div>
+          <div>
+            <div className="stat-label">odds</div>
+            <div className="text-ink-1 leading-tight">
+              {bookedOdds}
+              {finalOdds && (
+                <>
+                  <span className="text-ink-2 mx-1">→</span>
+                  <span className="text-ink-0">{finalOdds}</span>
+                </>
+              )}
+            </div>
+          </div>
+          <div>
+            <div className="stat-label">EV</div>
+            {showClosingEV ? (
+              <div className="leading-tight">
+                <span className={clsx("font-semibold",
+                  effectiveClosingEV! >= 0 ? "text-accent-overlay" : "text-accent-steam")}>
+                  {effectiveClosingEV! >= 0 ? "+" : ""}{effectiveClosingEV!.toFixed(1)}%
+                </span>
+                <div className="text-[10px] text-ink-2">was {t.capturedEV >= 0 ? "+" : ""}{t.capturedEV.toFixed(1)}%</div>
+              </div>
+            ) : (
+              <span className={clsx(
+                t.capturedEV > 0 ? "text-accent-overlay" : "text-accent-steam")}>
+                {t.capturedEV >= 0 ? "+" : ""}{t.capturedEV.toFixed(1)}%
+              </span>
+            )}
+          </div>
+        </div>
+        {settled && (
+          <div className="flex items-baseline gap-x-3 gap-y-0.5 flex-wrap text-xs font-mono tabular-nums">
+            <span className={clsx("font-semibold",
+              pl >= 0 ? "text-accent-overlay" : "text-accent-steam")}>
+              P/L {pl >= 0 ? "+" : ""}${pl.toFixed(2)}
+            </span>
+            {clv != null && (
+              <span className={clsx(
+                clv >= 0 ? "text-accent-overlay/70" : "text-accent-steam/70")}>
+                CLV {clv >= 0 ? "+" : ""}{clv.toFixed(1)}%
+              </span>
+            )}
+          </div>
+        )}
+        {t.reason && (
+          <div className="text-[11px] text-ink-2 italic">{t.reason}</div>
+        )}
+      </div>
+
+      <div className="hidden sm:grid grid-cols-[110px_70px_120px_140px_minmax(220px,1fr)_70px_120px_80px_110px] gap-3 items-center">
         <span className="font-mono text-xs uppercase tracking-wider text-ink-2 leading-tight flex flex-col">
           <span className="text-ink-1">
             {new Date(t.placedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" })}
@@ -1186,8 +1288,15 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
         )} title={t.shadow ? "Shadow: another strategy already covered this bet — tracked for attribution, no bankroll" : undefined}>
           {t.shadow ? "shadow" : t.mode}
         </span>
-        <Link href={`/race/${t.raceId}`} className="text-accent-cyan font-mono truncate">
-          {t.trackCode ?? t.raceId} {t.raceNumber ? `R${t.raceNumber}` : ""}
+        <Link href={`/race/${t.raceId}`} className="font-mono truncate leading-tight flex flex-col">
+          <span className="text-accent-cyan">
+            {t.trackCode ?? t.raceId} {t.raceNumber ? `R${t.raceNumber}` : ""}
+          </span>
+          {t.trackName && t.trackName !== t.trackCode && (
+            <span className="text-[10px] text-ink-2 normal-case truncate" title={t.trackName}>
+              {t.trackName}
+            </span>
+          )}
         </Link>
         <span className="font-mono text-[11px] text-ink-2 truncate">
           {t.strategyId ?? "manual"}
@@ -1264,12 +1373,12 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
         </span>
       </div>
       {t.reason && (
-        <div className="mt-1 ml-[280px] text-[11px] text-ink-2 italic truncate">
+        <div className="hidden sm:block mt-1 sm:ml-[280px] text-[11px] text-ink-2 italic truncate">
           {t.reason}
         </div>
       )}
       {settled && finishOrder.length > 0 && (
-        <div className="mt-1 ml-[280px] text-[11px] font-mono text-ink-2 flex flex-wrap items-baseline gap-x-2">
+        <div className="mt-1 sm:ml-[280px] text-[11px] font-mono text-ink-2 flex flex-wrap items-baseline gap-x-2">
           <span className="uppercase tracking-wider">finish:</span>
           {finishOrder.map((p, i) => (
             <span key={i} className={clsx(
@@ -1300,7 +1409,7 @@ function VerifyLinks({ ticket: t }: { ticket: Ticket }) {
   });
   if (!links.length) return null;
   return (
-    <div className="mt-1 ml-[280px] text-[10px] flex flex-wrap items-center gap-x-3 gap-y-1">
+    <div className="mt-1 sm:ml-[280px] text-[10px] flex flex-wrap items-center gap-x-3 gap-y-1">
       <span className="text-ink-2 font-mono uppercase tracking-wider">verify:</span>
       {links.map(l => (
         <a key={l.url} href={l.url} target="_blank" rel="noreferrer"
