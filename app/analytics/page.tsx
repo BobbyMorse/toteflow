@@ -564,15 +564,14 @@ function CarryoverWatch() {
                     <div className="text-[10px] text-ink-2">{c.confidence} conf</div>
                   </td>
                   <td className="px-3 py-2">
-                    <a href={`https://www.equibase.com/profiles/Results.cfm?type=Track&trk=${c.trackCode}&cy=USA`}
-                       target="_blank" rel="noreferrer"
+                    <a href="https://racing.fanduel.com/#/results" target="_blank" rel="noreferrer"
                        className="text-accent-cyan hover:underline text-xs font-mono">
-                      Equibase ↗
+                      FanDuel Results ↗
                     </a>
                     <span className="text-ink-2 mx-1">·</span>
-                    <a href="https://racing.fanduel.com/#/schedule" target="_blank" rel="noreferrer"
+                    <a href="https://dkhorse.com/results" target="_blank" rel="noreferrer"
                        className="text-accent-cyan hover:underline text-xs font-mono">
-                      FanDuel ↗
+                      DK Horse ↗
                     </a>
                   </td>
                 </tr>

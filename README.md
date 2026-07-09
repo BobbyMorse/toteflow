@@ -28,7 +28,8 @@ open GraphQL endpoint, no auth. TVG carries US, AU, and commingled international
 thoroughbred pools; that's the whole universe the app models.
 
 Booking: FanDuel Racing (same parent as TVG, same pools). Bet cards deep-link to
-racing.fanduel.com. Equibase is used for results verification.
+racing.fanduel.com. FanDuel Racing / DK Horse results pages are used for results
+verification.
 
 ## Strategy Framework
 Strategies live in [lib/strategies/](lib/strategies/). Each one implements `evaluate(race) → eval | null`.
@@ -56,4 +57,4 @@ survives restart so multi-week experiments work.
 ## Notes on US betting placement
 FanDuel Racing does not expose a betting API to retail. Each open bet card deep-links
 to racing.fanduel.com — place the bet manually (log in, find the race, wager).
-Strategy validation happens in paper mode against real TVG odds and real Equibase results.
+Strategy validation happens in paper mode against real TVG odds and real result charts (FanDuel Racing / DK Horse).

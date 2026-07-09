@@ -1210,7 +1210,7 @@ function relevantVerifyLinks(t: Ticket, settled: boolean) {
     postTime: t.postTime ?? t.placedAt,
   });
   if (!settled) return all;
-  return all.filter(l => l.label.startsWith("Equibase Result"));
+  return all.filter(l => l.label.endsWith("Result"));
 }
 
 function VerifyLinksInline({ ticket: t, settled }: { ticket: Ticket; settled: boolean }) {

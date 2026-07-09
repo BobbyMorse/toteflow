@@ -44,23 +44,16 @@ export function verificationLinks(opts: {
       description: `Same backend as FanDuel — search ${trackCode}`,
     });
     links.push({
-      label: "Equibase Entries",
-      url: `https://www.equibase.com/profiles/EntriesResults.cfm?type=Entry&trk=${encodeURIComponent(trackCode)}&cy=USA`,
-      description: `Track ${trackCode} entries — canonical source`,
+      label: "FanDuel Result",
+      url: `https://racing.fanduel.com/?utm_source=toteflow#/results`,
+      description: `Find ${trackCode} R${raceNumber} in FanDuel Racing results`,
     });
     links.push({
-      label: "Equibase Result",
-      url: `https://www.equibase.com/profiles/Results.cfm?type=Race&trk=${encodeURIComponent(trackCode)}&cy=USA&dt=${encodeURIComponent(formatDateMmDdYyyy(opts.postTime))}&rn=${raceNumber}`,
-      description: `Race ${raceNumber} result — official chart`,
+      label: "DK Horse Result",
+      url: `https://dkhorse.com/results`,
+      description: `DraftKings Horse results — find ${trackCode} R${raceNumber}`,
     });
   }
 
   return links;
-}
-
-function formatDateMmDdYyyy(epochMs: number): string {
-  const d = new Date(epochMs);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${mm}/${dd}/${d.getFullYear()}`;
 }
