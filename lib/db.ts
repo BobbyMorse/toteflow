@@ -16,24 +16,55 @@ function ensureDataDir(): string {
 }
 
 function openDb(): Database.Database {
-  // During `next build`, Next.js imports every route module in parallel worker
-  // processes to collect page data. Each worker opened its own connection to
-  // the real DB file and raced on applySchema()'s ALTER TABLE — one build hit
-  // SQLITE_BUSY, the next hit "duplicate column name" (both workers read
-  // PRAGMA table_info before either committed the ADD COLUMN). Use an in-memory
-  // DB during build so imports still work (module-level `db.prepare(...)` in
-  // storage.ts/analytics.ts needs a real connection), but nothing touches disk
-  // and there's no cross-worker contention.
-  const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
-  const db = isBuildPhase
-    ? new Database(":memory:")
-    : new Database(path.join(ensureDataDir(), "toteflow.db"));
-  db.pragma("busy_timeout = 5000");
+  const dir = ensureDataDir();
+  const file = path.join(dir, "toteflow.db");
+  const db = new Database(file);
+  db.pragma("busy_timeout = 30000");
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = NORMAL");
   db.pragma("foreign_keys = ON");
-  applySchema(db);
+  applySchemaCrossProcessSafe(db, dir);
   return db;
+}
+
+// Serialize applySchema across processes with a filesystem mutex. Necessary
+// because `next build` spawns parallel worker processes to collect page data,
+// and each worker imports this module. Without a cross-process lock, multiple
+// workers race on `ALTER TABLE ADD COLUMN`: they all snapshot PRAGMA
+// table_info before any ADD commits, then all try to add the same column and
+// the losers throw "duplicate column name". SQLite's busy_timeout doesn't
+// help — that's for lock contention, not for logical duplicate DDL.
+function applySchemaCrossProcessSafe(db: Database.Database, dir: string): void {
+  const lockPath = path.join(dir, ".schema.lock");
+  const deadline = Date.now() + 60_000;
+  let acquired = false;
+  while (!acquired) {
+    try {
+      const fd = fs.openSync(lockPath, "wx");
+      fs.closeSync(fd);
+      acquired = true;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST") throw e;
+      // Break stale locks (crashed worker) after 30s of untouched age.
+      try {
+        const stat = fs.statSync(lockPath);
+        if (Date.now() - stat.mtimeMs > 30_000) {
+          fs.unlinkSync(lockPath);
+          continue;
+        }
+      } catch { /* raced with unlink — retry */ }
+      if (Date.now() > deadline) throw new Error("timed out waiting for schema lock");
+      // Synchronous ~50ms sleep. Atomics.wait needs SharedArrayBuffer, which is
+      // fine on Node but noisy — this is simpler and only runs during startup.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    }
+  }
+  try {
+    applySchema(db);
+  } finally {
+    try { fs.unlinkSync(lockPath); } catch { /* another process already cleaned up */ }
+  }
 }
 
 function applySchema(db: Database.Database): void {
@@ -130,8 +161,9 @@ declare global {
 
 export const db = globalThis.__toteflowDb ?? (globalThis.__toteflowDb = openDb());
 // applySchema is idempotent; re-run on HMR so newly-added columns land on a
-// db connection cached from before the schema change.
-applySchema(db);
+// db connection cached from before the schema change. Guarded by the same
+// cross-process lock so concurrent HMR reloads don't race either.
+applySchemaCrossProcessSafe(db, ensureDataDir());
 
 // Cleanly close on dev server shutdown — prevents WAL file lockup on restart.
 // Guarded by a global flag because Next.js HMR re-evaluates this module on
