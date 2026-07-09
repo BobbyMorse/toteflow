@@ -426,6 +426,7 @@ function OpenBetCard({ group: g }: { group: OpenBetGroup }) {
   const links = verificationLinks({
     source,
     trackCode: g.trackCode,
+    trackName: g.trackName,
     raceNumber: g.raceNumber,
     postTime: g.postTime,
   });
@@ -1226,6 +1227,7 @@ function relevantVerifyLinks(t: Ticket, settled: boolean) {
   const all = verificationLinks({
     source,
     trackCode: t.trackCode ?? "",
+    trackName: t.trackName,
     raceNumber: t.raceNumber ?? 0,
     postTime: t.postTime ?? t.placedAt,
   });

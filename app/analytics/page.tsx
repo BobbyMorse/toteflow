@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { apiUrl } from "@/lib/api-url";
+import { fanduelRaceUrl } from "@/lib/verification";
 import clsx from "clsx";
 
 interface StrategyAnalytics {
@@ -564,14 +565,11 @@ function CarryoverWatch() {
                     <div className="text-[10px] text-ink-2">{c.confidence} conf</div>
                   </td>
                   <td className="px-3 py-2">
-                    <a href="https://racing.fanduel.com/#/results" target="_blank" rel="noreferrer"
+                    <a href={fanduelRaceUrl(c.trackCode, c.trackName, c.startRaceNumber)}
+                       target="_blank" rel="noreferrer"
+                       title={`Deep link to ${c.trackCode} R${c.startRaceNumber} on FanDuel Racing`}
                        className="text-accent-cyan hover:underline text-xs font-mono">
-                      FanDuel Results ↗
-                    </a>
-                    <span className="text-ink-2 mx-1">·</span>
-                    <a href="https://dkhorse.com/results" target="_blank" rel="noreferrer"
-                       className="text-accent-cyan hover:underline text-xs font-mono">
-                      DK Horse ↗
+                      FanDuel R{c.startRaceNumber} ↗
                     </a>
                   </td>
                 </tr>

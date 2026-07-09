@@ -55,6 +55,11 @@ survives restart so multi-week experiments work.
 - **SQL:** `sqlite3 data/toteflow.db` — open the raw DB
 
 ## Notes on US betting placement
-FanDuel Racing does not expose a betting API to retail. Each open bet card deep-links
-to racing.fanduel.com — place the bet manually (log in, find the race, wager).
-Strategy validation happens in paper mode against real TVG odds and real result charts (FanDuel Racing / DK Horse).
+FanDuel Racing does not expose a betting API to retail. Each open bet card
+deep-links directly to the race's bet slip on racing.fanduel.com
+(`/racetracks/{TRK}/{track-slug}?race={N}`) so you land already on the right
+race — pick horses, enter the wager, confirm. There is no way to auto-fire
+the confirm click; parimutuel books don't publish prefill-amount schemes and
+retail sessions are cookie-authed.
+Strategy validation happens in paper mode against real TVG odds and the
+post-race view of the same URL, which shows finish order + payoffs.
