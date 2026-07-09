@@ -16,13 +16,18 @@ function ensureDataDir(): string {
 }
 
 function openDb(): Database.Database {
-  const dir = ensureDataDir();
-  const file = path.join(dir, "toteflow.db");
-  const db = new Database(file);
-  // Wait up to 5s if another process holds the write lock. Next.js parallel
-  // worker processes during `next build` all import this module, and without
-  // this the second worker's applySchema() hits SQLITE_BUSY on the first's
-  // CREATE TABLE and the build fails.
+  // During `next build`, Next.js imports every route module in parallel worker
+  // processes to collect page data. Each worker opened its own connection to
+  // the real DB file and raced on applySchema()'s ALTER TABLE — one build hit
+  // SQLITE_BUSY, the next hit "duplicate column name" (both workers read
+  // PRAGMA table_info before either committed the ADD COLUMN). Use an in-memory
+  // DB during build so imports still work (module-level `db.prepare(...)` in
+  // storage.ts/analytics.ts needs a real connection), but nothing touches disk
+  // and there's no cross-worker contention.
+  const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+  const db = isBuildPhase
+    ? new Database(":memory:")
+    : new Database(path.join(ensureDataDir(), "toteflow.db"));
   db.pragma("busy_timeout = 5000");
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = NORMAL");
