@@ -83,17 +83,11 @@ export default function HowItWorksPage() {
         <ul className="list-disc pl-5 space-y-1 text-ink-1">
           <li>Low single-digit hit rate, as expected given where the value lives.</li>
           <li>Realized ROI is concentrated in the longer-price buckets.</li>
-          <li>
-            Closing-line value has been <span className="text-accent-overlay">consistently positive</span>{" "}
-            &mdash; the market drifts our way before post, which is the leading
-            indicator that there&apos;s real signal beyond variance.
-          </li>
         </ul>
         <p className="text-ink-2 text-sm">
           At the current sample size the confidence interval on ROI is still wide.
-          CLV is the leading indicator; realized P&amp;L is the verdict, and the
-          verdict takes hundreds more bets to become statistically meaningful. See
-          the strategies page for live numbers.
+          Realized P&amp;L is the verdict, and the verdict takes hundreds more bets
+          to become statistically meaningful. See the strategies page for live numbers.
         </p>
       </Section>
 
