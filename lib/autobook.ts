@@ -22,6 +22,7 @@ import type { Strategy, StrategyConfig, StrategyEvaluation } from "./strategies/
 import { detectCarryovers, type CarryoverOpportunity } from "./carryovers";
 import { decideBetWindow } from "./optimal-timer";
 import { minBaseForWager } from "./wager-minimums";
+import { strategyCalibratedTrueP } from "./strategy-calibration";
 
 function phaseOf(race: Race, now: number): Race["phase"] {
   const ms = race.postTime - now;
@@ -255,12 +256,14 @@ class Engine {
       const originStrategy = strategies.find(s => s.id === t.strategyId) ?? null;
       let calibratedEv: number | null = null;
       let calibratedReason: string | null = null;
+      let calibratedTrueP: number | null = null;
       if (originStrategy) {
         try {
           const reeval = originStrategy.evaluate(race);
           if (reeval && reeval.selection === selection && reeval.type === t.type) {
             calibratedEv = reeval.evPercent;
             calibratedReason = reeval.reason;
+            calibratedTrueP = reeval.truePWin ?? null;
           }
         } catch (e) {
           this.note(`${originStrategy.id} re-eval error on ${race.id}: ${(e as Error).message}`);
@@ -271,6 +274,15 @@ class Engine {
       // the uncalibrated adapter value we're specifically avoiding.
       const liveEv = calibratedEv ?? t.capturedEV;
       const liveEvRaw = runner.evPercentRaw;
+      // Same story for trueP: prefer the strategy's own calibrated value
+      // (from its evaluate() output), else derive it from the runner's
+      // adapter blend using the strategy's known calibration, else fall
+      // through to the adapter's blend unchanged.
+      const liveMarketP = 1 / Math.max(1.2, liveOdds);
+      const liveTrueP = calibratedTrueP
+        ?? (runner.truePWin != null
+              ? strategyCalibratedTrueP(t.strategyId, runner.truePWin, liveMarketP)
+              : undefined);
 
       if (isExoticInRace) {
         // Preserve the stake and estimatedPayout that were locked in at stage
@@ -305,7 +317,7 @@ class Engine {
         capturedOdds: liveOdds,
         capturedEV: liveEv,
         capturedEVRaw: liveEvRaw,
-        capturedTrueP: runner.truePWin,
+        capturedTrueP: liveTrueP,
         potentialPayout: liveStake * liveOdds,
         placedAt: now,
         shadow: isShadow || undefined,
@@ -630,11 +642,18 @@ class Engine {
     if (existingStaged) {
       const existingKey = existingStaged.selections.join("-");
       if (existingKey === selectionKey) {
-        // Same pick(s), refreshed signal — update match EV/odds so the UI
-        // reflects the current state of the opportunity.
+        // Same pick(s), refreshed signal — update match EV/odds/trueP so the
+        // UI reflects the current state of the opportunity. Keep capturedTrueP
+        // in sync with capturedEV so both use the same calibration.
+        const refreshMarketP = 1 / Math.max(1.2, runner.currentOdds);
+        const refreshTrueP = evaluation.truePWin
+          ?? (runner.truePWin != null
+                ? strategyCalibratedTrueP(strategy.id, runner.truePWin, refreshMarketP)
+                : undefined);
         Tickets.update(existingStaged.id, {
           capturedEV: evaluation.evPercent,
           capturedEVRaw: runner.evPercentRaw,
+          capturedTrueP: refreshTrueP,
           capturedOdds: runner.currentOdds,
         });
         return "refreshed";
@@ -664,6 +683,16 @@ class Engine {
     const exoticCombos = evaluation.combos ?? selections.length;
     const exoticStake = isExoticInRace ? cfg.stake * exoticCombos : 0;
     const exoticPayout = isExoticInRace ? (evaluation.estimatedPayout ?? 0) : 0;
+    // Capture a strategy-calibrated trueP alongside the raw adapter blend so
+    // the tickets page can render "model fair" / "live EV" using the same
+    // probability the strategy itself is gating on. For strategies that don't
+    // recalibrate (everything except tvg-baseline today), this passes the
+    // adapter's value through unchanged.
+    const stageMarketP = 1 / Math.max(1.2, runner.currentOdds);
+    const stageTrueP = evaluation.truePWin
+      ?? (runner.truePWin != null
+            ? strategyCalibratedTrueP(strategy.id, runner.truePWin, stageMarketP)
+            : undefined);
     const ticket: Ticket = {
       id: `auto_${strategy.id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       raceId: race.id,
@@ -677,6 +706,7 @@ class Engine {
       potentialPayout: exoticPayout,
       capturedEV: evaluation.evPercent,
       capturedEVRaw: runner.evPercentRaw,
+      capturedTrueP: stageTrueP,
       capturedOdds: runner.currentOdds,
       placedAt: now,           // overwritten at promotion to the fire moment
       postTime: race.postTime,

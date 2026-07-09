@@ -106,6 +106,9 @@ function applySchema(db: Database.Database): void {
   if (!ticketCols.has("closingEVRaw")) {
     db.exec("ALTER TABLE tickets ADD COLUMN closingEVRaw REAL");
   }
+  if (!ticketCols.has("capturedTrueP")) {
+    db.exec("ALTER TABLE tickets ADD COLUMN capturedTrueP REAL");
+  }
 
   const v = (db.prepare("SELECT value FROM meta WHERE key = 'schemaVersion'").get() as { value: string } | undefined)?.value;
   if (!v) {

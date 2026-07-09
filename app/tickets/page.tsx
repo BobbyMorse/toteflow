@@ -7,6 +7,7 @@ import { useToteflow } from "@/lib/store";
 import { decideBetWindow, type BetWindowDecision } from "@/lib/optimal-timer";
 import { apiUrl } from "@/lib/api-url";
 import type { AutobookState } from "@/lib/autobook-view";
+import { strategyCalibratedTrueP, evPercentFromTrueP } from "@/lib/strategy-calibration";
 import Link from "next/link";
 import clsx from "clsx";
 
@@ -230,6 +231,11 @@ interface OpenBetGroup {
   // Model-estimated true win probability at fire time (frozen alongside
   // capturedOdds). Used to show model-prob drift separately from odds drift.
   capturedTrueP: number | null;
+  // Strategy id used to calibrate the live "model fair" / "live EV" display.
+  // Prefers tvg-baseline when present (most conservative calibration in the
+  // stack) so consensus groups don't flip between views. Null for manual
+  // tickets, which fall back to the adapter's raw blend.
+  calibrationStrategyId: string | null;
   totalStake: number;          // sum across all strategy tickets in this group
   strategies: { id: string; ev: number; reason?: string }[];
   tickets: Ticket[];           // the underlying tickets (one per agreeing strategy)
@@ -283,6 +289,10 @@ function groupOpenBets(open: Ticket[]): OpenBetGroup[] {
       } else {
         existing.strategies.push({ id: sid, ev: t.capturedEV, reason: t.reason });
       }
+      // Prefer tvg-baseline's calibration for the group display when it's
+      // one of the firing strategies — its 30%-weight trueP is more
+      // conservative than the adapter blend other strategies use.
+      if (t.strategyId === "tvg-baseline") existing.calibrationStrategyId = "tvg-baseline";
       existing.tickets.push(t);
     } else {
       map.set(key, {
@@ -297,6 +307,7 @@ function groupOpenBets(open: Ticket[]): OpenBetGroup[] {
         horseName: t.horseName ?? "",
         capturedOdds: t.capturedOdds,
         capturedTrueP: t.capturedTrueP ?? null,
+        calibrationStrategyId: t.strategyId ?? null,
         totalStake: t.stake,
         strategies: [{ id: sid, ev: t.capturedEV, reason: t.reason }],
         tickets: [t],
@@ -365,18 +376,27 @@ function OpenBetCard({ group: g }: { group: OpenBetGroup }) {
   const oddsDriftPct = !allStaged && liveOdds != null && g.capturedOdds > 0
     ? ((g.capturedOdds - liveOdds) / g.capturedOdds) * 100
     : null;
-  // Live model EV from the race feed — the value that actually decides whether
-  // the bet is still +EV right now. capturedEV is frozen at fire-time and stops
-  // reflecting reality once odds move; without surfacing live EV, the user can't
-  // tell if a LOCKED "BET NOW" still has positive expectation.
-  const liveEv = liveRunner?.evPercent ?? null;
 
-  // Model view — separate from the market view. trueP is the adapter's
-  // blended probability; fairDecimal is the odds that would make EV zero
-  // given trueP + takeout. Track drift from fire-time trueP so the user can
-  // see WHY EV moved: market drift, model drift, or the model dropping out.
-  const liveTrueP = liveRunner?.truePWin ?? null;
+  // Model view — recomputed with the FIRING strategy's calibration so it
+  // matches the reason line and captured EV. `truePWin` on the runner is
+  // the adapter's raw blend (65% weight on the model for "high" quality
+  // races); tvg-baseline gates on a 30%-weight recalibration and the
+  // display must show the same probability the strategy is using, not the
+  // adapter's more aggressive view. See lib/strategy-calibration.ts.
   const liveTakeout = liveRace?.takeout ?? null;
+  const adapterLiveTrueP = liveRunner?.truePWin ?? null;
+  const liveMarketP = liveOdds != null && liveOdds > 0 ? 1 / liveOdds : null;
+  const liveTrueP = adapterLiveTrueP != null && liveMarketP != null
+    ? strategyCalibratedTrueP(g.calibrationStrategyId, adapterLiveTrueP, liveMarketP)
+    : null;
+  // Live model EV — recomputed from the strategy's calibrated trueP so the
+  // "live EV" number tracks the same probability the strategy is using.
+  // Falls back to the adapter's `evPercent` when the strategy trueP isn't
+  // available (e.g. exotic wagers, model-off states) so the number remains
+  // meaningful even without a calibration.
+  const liveEv = liveTrueP != null && liveOdds != null && liveTakeout != null
+    ? evPercentFromTrueP(liveTrueP, liveOdds, liveTakeout)
+    : liveRunner?.evPercent ?? null;
   const modelOn = isModelContributing(liveTrueP, liveOdds);
   const fairDecimal = modelOn ? modelFairDecimal(liveTrueP, liveTakeout) : null;
   // Overpricing % = (market − fair) / fair. Positive = market is longer
@@ -455,7 +475,7 @@ function OpenBetCard({ group: g }: { group: OpenBetGroup }) {
           {(exotic || allStaged || liveEv == null) && (
             <EVExplainer
               context="live"
-              trueP={liveRunner?.truePWin ?? null}
+              trueP={liveTrueP}
               odds={liveOdds}
               takeout={liveRace?.takeout ?? null}
               liveEv={liveEv}
@@ -590,7 +610,7 @@ function OpenBetCard({ group: g }: { group: OpenBetGroup }) {
             </span>
             <EVExplainer
               context="live"
-              trueP={liveRunner?.truePWin ?? null}
+              trueP={liveTrueP}
               odds={liveOdds}
               takeout={liveRace?.takeout ?? null}
               liveEv={liveEv}

@@ -5,6 +5,11 @@ import type { Ticket } from "./types";
 import type { StrategyConfig } from "./strategies/types";
 import { strategies } from "./strategies";
 import { db } from "./db";
+import {
+  adapterTruePFromRawEV,
+  calibrateTVGBaselineTrueP,
+  evPercentFromTrueP,
+} from "./strategy-calibration";
 
 interface ClosingOddsSnap {
   raceId: string;
@@ -104,6 +109,7 @@ function rowToTicket(row: any): Ticket {
     closingEV: row.closingEV ?? undefined,
     capturedEVRaw: row.capturedEVRaw ?? undefined,
     closingEVRaw: row.closingEVRaw ?? undefined,
+    capturedTrueP: row.capturedTrueP ?? undefined,
     shadow: row.shadow ? true : undefined,
     legs: row.legs ? JSON.parse(row.legs) : undefined,
     stagedAt: row.stagedAt ?? undefined,
@@ -115,13 +121,13 @@ function rowToTicket(row: any): Ticket {
 const stmtInsertTicket = db.prepare(`
   INSERT INTO tickets (
     id, raceId, trackCode, trackName, raceNumber, horseName, type, selections,
-    stake, potentialPayout, capturedEV, capturedEVRaw, capturedOdds, placedAt, postTime,
+    stake, potentialPayout, capturedEV, capturedEVRaw, capturedTrueP, capturedOdds, placedAt, postTime,
     status, mode, strategyId, reason, settledAt, realizedPL, winners,
     closingOdds, closingEV, closingEVRaw, shadow, legs,
     stagedAt, abortedAt, abortReason
   ) VALUES (
     @id, @raceId, @trackCode, @trackName, @raceNumber, @horseName, @type, @selections,
-    @stake, @potentialPayout, @capturedEV, @capturedEVRaw, @capturedOdds, @placedAt, @postTime,
+    @stake, @potentialPayout, @capturedEV, @capturedEVRaw, @capturedTrueP, @capturedOdds, @placedAt, @postTime,
     @status, @mode, @strategyId, @reason, @settledAt, @realizedPL, @winners,
     @closingOdds, @closingEV, @closingEVRaw, @shadow, @legs,
     @stagedAt, @abortedAt, @abortReason
@@ -143,6 +149,7 @@ const stmtUpdateTicket = db.prepare(`
     capturedOdds    = @capturedOdds,
     capturedEV      = @capturedEV,
     capturedEVRaw   = @capturedEVRaw,
+    capturedTrueP   = @capturedTrueP,
     potentialPayout = @potentialPayout,
     placedAt        = @placedAt,
     settledAt       = @settledAt,
@@ -192,6 +199,7 @@ function ticketToRow(t: Ticket): Record<string, unknown> {
     potentialPayout: t.potentialPayout,
     capturedEV: t.capturedEV,
     capturedEVRaw: t.capturedEVRaw ?? null,
+    capturedTrueP: t.capturedTrueP ?? null,
     capturedOdds: t.capturedOdds,
     placedAt: t.placedAt,
     postTime: t.postTime ?? null,
@@ -299,6 +307,41 @@ function hydrate(): Store {
     if (n > 0) console.log(`[storage] reconciled closingEV on ${n} settled tickets`);
   }
 
+  // One-time-per-row backfill: tvg-baseline tickets fired before commit d712227
+  // wrote `capturedEV` as the adapter's raw blend (65% model weight) instead of
+  // the strategy's own calibrated value (30% model weight). The ticket display
+  // now derives "model fair" / "live EV" from the strategy calibration, so
+  // stale rows show a raw "was +X%" that doesn't match the reason line. Detect
+  // pre-fix rows (capturedEV == capturedEVRaw within rounding) and recompute
+  // capturedEV + capturedTrueP from the raw EV, treating takeout as 0.16
+  // (matches the tvg-baseline FALLBACK_TAKEOUT — real value isn't persisted).
+  // Idempotent: the equality check fails after the first pass.
+  {
+    const stmtBackfillCalib = db.prepare(
+      "UPDATE tickets SET capturedEV = ?, capturedTrueP = ? WHERE id = ?",
+    );
+    const FALLBACK_TAKEOUT = 0.16;
+    let n = 0;
+    for (const t of tickets) {
+      if (t.strategyId !== "tvg-baseline") continue;
+      if (t.capturedEVRaw == null) continue;
+      if (!(t.capturedOdds > 1)) continue;
+      // Rounding: capturedEV was written as the strategy's own EV (short
+      // float), so a pre-fix row has capturedEV within ~0.01 of capturedEVRaw.
+      if (Math.abs(t.capturedEV - t.capturedEVRaw) > 0.05) continue;
+      const adapterP = adapterTruePFromRawEV(t.capturedEVRaw, t.capturedOdds, FALLBACK_TAKEOUT);
+      if (adapterP == null) continue;
+      const marketP = 1 / t.capturedOdds;
+      const calibP = calibrateTVGBaselineTrueP(adapterP, marketP);
+      const calibEV = evPercentFromTrueP(calibP, t.capturedOdds, FALLBACK_TAKEOUT);
+      t.capturedEV = calibEV;
+      t.capturedTrueP = calibP;
+      stmtBackfillCalib.run(calibEV, calibP, t.id);
+      n++;
+    }
+    if (n > 0) console.log(`[storage] backfilled strategy-calibrated capturedEV on ${n} tvg-baseline tickets`);
+  }
+
   return {
     tickets,
     strategyConfigs: configs,
@@ -340,6 +383,7 @@ export const Tickets = {
       capturedOdds: t.capturedOdds,
       capturedEV: t.capturedEV,
       capturedEVRaw: t.capturedEVRaw ?? null,
+      capturedTrueP: t.capturedTrueP ?? null,
       potentialPayout: t.potentialPayout,
       placedAt: t.placedAt,
       settledAt: t.settledAt ?? null,

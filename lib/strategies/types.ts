@@ -24,6 +24,11 @@ export interface StrategyEvaluation {
   startRaceNumber?: number;
   type: Ticket["type"];
   evPercent: number;        // strategy's own EV estimate
+  // Strategy's own calibrated trueP for the selected runner. Optional; only
+  // strategies that recalibrate the adapter's blend set it (tvg-baseline is
+  // currently the only one). Used by autobook to store a strategy-consistent
+  // capturedTrueP for the fire-time drift display.
+  truePWin?: number;
   reason: string;           // short text — surfaces on ticket + log
   confidence: number;       // 0..1 — strategies may downweight low-confidence reads
   // Estimated payout if hit, in dollars. Optional; required for exotic

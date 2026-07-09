@@ -1,5 +1,6 @@
 import type { Strategy } from "./types";
 import { classifyTrack, isThoroughbred } from "../track-types";
+import { calibrateTVGBaselineTrueP, evPercentFromTrueP } from "../strategy-calibration";
 
 const MIN_SECONDS_TO_POST = 90;
 const FALLBACK_TAKEOUT = 0.16;
@@ -13,13 +14,9 @@ const FALLBACK_TAKEOUT = 0.16;
 // the closing tote and the closing tote still has favorite-longshot bias —
 // so the sharp money is co-overrating the same bombs we are.
 //
-// We cut the model's weight to MODEL_WEIGHT below (was effectively 0.65 in
-// the adapter). At 0.30 the model's probability gets pulled most of the way
-// back to market implied, which is roughly where realized hit rate has been
-// landing. Doesn't filter longshots — they're still eligible — just requires
-// the model to be much more confident before the post-calibration EV clears
-// the threshold. Tune as the sample grows.
-const MODEL_WEIGHT = 0.30;
+// The recalibration itself lives in lib/strategy-calibration.ts so the
+// tickets page can recompute the same trueP for its live "model fair" and
+// "live EV" displays. Change the weight there.
 
 export const tvgBaselineStrategy: Strategy = {
   id: "tvg-baseline",
@@ -34,33 +31,23 @@ export const tvgBaselineStrategy: Strategy = {
     if (live.length < 3) return null;
 
     // Recompute EV per runner using the calibrated model weight, then pick
-    // the best. We can't just multiply the adapter's EV by a constant because
-    // EV scales nonlinearly with trueP. Instead: back out the adapter's raw
-    // model probability from its blend (modelWeight=0.65 for "high" quality,
-    // 0.35 to market implied), re-blend at MODEL_WEIGHT, and recompute EV.
+    // the best. Calibration formula lives in lib/strategy-calibration.ts.
     const takeout = race.takeout > 0 ? race.takeout : FALLBACK_TAKEOUT;
-    const ADAPTER_MODEL_WEIGHT = 0.65;
-    type Candidate = { runner: typeof live[number]; ev: number };
+    type Candidate = { runner: typeof live[number]; ev: number; trueP: number };
     let best: Candidate | null = null;
     for (const r of live) {
       if (r.truePWin == null) continue;
       const marketP = 1 / Math.max(1.2, r.currentOdds);
-      // Recover the adapter's pre-blend model probability. If the blend wasn't
-      // applied (e.g., r.truePWin == marketP for some fallback path), we get
-      // marketP back — calibratedP then equals marketP and EV ≈ -takeout, which
-      // correctly produces no fire.
-      const rawModelP = Math.max(0.005, Math.min(0.95,
-        (r.truePWin - (1 - ADAPTER_MODEL_WEIGHT) * marketP) / ADAPTER_MODEL_WEIGHT,
-      ));
-      const calibP = MODEL_WEIGHT * rawModelP + (1 - MODEL_WEIGHT) * marketP;
-      const ev = (calibP * (r.currentOdds - 1) * (1 - takeout) - (1 - calibP)) * 100;
-      if (ev > 0 && (best == null || ev > best.ev)) best = { runner: r, ev };
+      const calibP = calibrateTVGBaselineTrueP(r.truePWin, marketP);
+      const ev = evPercentFromTrueP(calibP, r.currentOdds, takeout);
+      if (ev > 0 && (best == null || ev > best.ev)) best = { runner: r, ev, trueP: calibP };
     }
     if (!best) return null;
     return {
       selection: best.runner.program,
       type: "WIN",
       evPercent: best.ev,
+      truePWin: best.trueP,
       reason: `TVG model EV +${best.ev.toFixed(1)}% on ${best.runner.name} (model: high, calibrated)`,
       confidence: 0.6,
     };
