@@ -18,7 +18,7 @@ export default function RaceRowItem({ race }: { race: Race }) {
     <Link
       href={`/race/${race.id}`}
       className={clsx(
-        "grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[160px_1fr_140px_90px] gap-x-3 gap-y-1 items-center px-3 py-2.5 rounded-md",
+        "grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(220px,1.4fr)_minmax(0,1fr)_auto_auto] gap-x-4 gap-y-1 items-center px-3 py-2.5 rounded-md",
         "bg-bg-1/60 hover:bg-bg-2 transition-colors border border-line/40 hover:border-line",
         race.phase === "chaos" && "ring-1 ring-accent-steam/50 animate-chaos-pulse",
       )}
