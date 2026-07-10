@@ -1,6 +1,5 @@
 import type { Strategy, StrategyEvaluation } from "./types";
 import type { Race } from "../types";
-import { classifyTrack, isThoroughbred } from "../track-types";
 
 // Trifecta — top-3 box of the model's strongest contenders. The thesis:
 // when the model has high quality and 3 horses meaningfully separate
@@ -45,7 +44,6 @@ export const trifectaKeyStrategy: Strategy = {
   name: "Trifecta Top-3 Box",
   thesis: "Box the model's top 3 contenders when they meaningfully outrun the field — any in-the-money order pays.",
   evaluate(race: Race): StrategyEvaluation | null {
-    if (!isThoroughbred(classifyTrack(race.trackCode, race.track))) return null;
     if (race.modelQuality !== "high") return null;
     const secondsToPost = (race.postTime - Date.now()) / 1000;
     if (secondsToPost < MIN_SECONDS_TO_POST) return null;

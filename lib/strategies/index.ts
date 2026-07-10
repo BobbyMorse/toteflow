@@ -14,8 +14,10 @@ import { trackBiasStrategy } from "./track-bias";
 import { exactaOverlayPairStrategy } from "./exacta-overlay-pair";
 import { trifectaKeyStrategy } from "./trifecta-key";
 import { ddConsensusStrategy } from "./dd-consensus";
+import { variantStrategy } from "./variants";
 
-export const strategies: Strategy[] = [
+// Base strategies — all currently apply to thoroughbred.
+const baseStrategies: Strategy[] = [
   tvgBaselineStrategy,
   favFadeStrategy,
   overlayVsMlStrategy,
@@ -31,6 +33,22 @@ export const strategies: Strategy[] = [
   exactaOverlayPairStrategy,
   trifectaKeyStrategy,
   ddConsensusStrategy,
+];
+
+// Per-breed variants: same code, different discipline gate. Each gets its own
+// strategy config so users can toggle/tune per-breed independently and per-breed
+// P&L stays isolated. Config defaults inherit from `defaultConfig()` in storage.
+const harnessVariants = baseStrategies.map(base =>
+  variantStrategy(base, { discipline: "harness", idSuffix: "harness", nameSuffix: "(Harness)" }),
+);
+const quarterHorseVariants = baseStrategies.map(base =>
+  variantStrategy(base, { discipline: "quarter-horse", idSuffix: "qh", nameSuffix: "(QH)" }),
+);
+
+export const strategies: Strategy[] = [
+  ...baseStrategies,
+  ...harnessVariants,
+  ...quarterHorseVariants,
 ];
 
 export function getStrategy(id: string): Strategy | undefined {

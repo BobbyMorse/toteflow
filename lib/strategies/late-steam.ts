@@ -1,5 +1,4 @@
 import type { Strategy } from "./types";
-import { classifyTrack, isThoroughbred } from "../track-types";
 
 // Sharp money concentrates in the last minute before post. A runner whose
 // odds dropped sharply in the closing seconds is being backed by people who
@@ -20,7 +19,6 @@ export const lateSteamStrategy: Strategy = {
   thesis: "Bet runners whose odds dropped 12%+ in the last 60s on liquid pools.",
   evaluate(race) {
     if (race.phase !== "chaos" && race.phase !== "action") return null;
-    if (!isThoroughbred(classifyTrack(race.trackCode, race.track))) return null;
     const secondsToPost = (race.postTime - Date.now()) / 1000;
     if (secondsToPost < MIN_SECONDS_TO_POST) return null;
     if (race.winPoolTotal < MIN_WIN_POOL) return null;

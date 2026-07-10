@@ -1,6 +1,5 @@
 import type { Strategy, StrategyEvaluation } from "./types";
 import type { Race } from "../types";
-import { classifyTrack, isThoroughbred } from "../track-types";
 
 // Exacta box of the model's top two contenders, fired only when both horses
 // are real value plays (positive WIN-pool EV) and both clearly outrun the
@@ -72,7 +71,6 @@ export const exactaOverlayPairStrategy: Strategy = {
   name: "Exacta Overlay Pair",
   thesis: "Box top-2 model contenders when both have +EV vs WIN pool and dominate the field. Skip chalk-on-chalk pairings (where exacta pool is overpriced).",
   evaluate(race: Race): StrategyEvaluation | null {
-    if (!isThoroughbred(classifyTrack(race.trackCode, race.track))) return null;
     if (race.modelQuality !== "high") return null;
     const secondsToPost = (race.postTime - Date.now()) / 1000;
     if (secondsToPost < MIN_SECONDS_TO_POST) return null;

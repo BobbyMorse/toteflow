@@ -1,5 +1,4 @@
 import type { Strategy } from "./types";
-import { classifyTrack, isThoroughbred } from "../track-types";
 import { calibrateTVGBaselineTrueP, evPercentFromTrueP } from "../strategy-calibration";
 
 const MIN_SECONDS_TO_POST = 90;
@@ -22,10 +21,9 @@ export const tvgBaselineStrategy: Strategy = {
   id: "tvg-baseline",
   appliesTo: ["thoroughbred"],
   name: "TVG Model Baseline",
-  thesis: "Trust TVG's winProbability when modelQuality === 'high', calibrated against realized P/L. Thoroughbred only.",
+  thesis: "Trust TVG's winProbability when modelQuality === 'high', calibrated against realized P/L.",
   evaluate(race) {
     if (race.modelQuality !== "high") return null;
-    if (!isThoroughbred(classifyTrack(race.trackCode, race.track))) return null;
     const secondsToPost = (race.postTime - Date.now()) / 1000;
     if (secondsToPost < MIN_SECONDS_TO_POST) return null;
     const live = race.runners.filter(r => !r.scratched && r.currentOdds < 60);

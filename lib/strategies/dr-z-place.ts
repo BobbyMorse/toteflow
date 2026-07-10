@@ -1,6 +1,5 @@
 import type { Strategy } from "./types";
 import type { Race, Runner } from "../types";
-import { classifyTrack, isThoroughbred } from "../track-types";
 
 // Dr. Z place inefficiency — full Ziemba & Hausch calculation
 // (Beat the Racetrack, 1984).
@@ -152,7 +151,6 @@ export const drZPlaceStrategy: Strategy = {
   name: "Dr. Z Place",
   thesis: "Place-pool mispricing: bet PLACE when win-pool prob materially exceeds place-pool prob (Ziemba & Hausch).",
   evaluate(race: Race) {
-    if (!isThoroughbred(classifyTrack(race.trackCode, race.track))) return null;
     const secondsToPost = (race.postTime - Date.now()) / 1000;
     if (secondsToPost < MIN_SECONDS_TO_POST) return null;
 

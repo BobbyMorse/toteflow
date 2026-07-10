@@ -1,5 +1,4 @@
 import type { Strategy } from "./types";
-import { classifyTrack, isThoroughbred } from "../track-types";
 
 // Heavy favorites (sub-2.0 decimal, i.e. odds-on) are statistically over-bet
 // in deep fields. Public piles on low-price favorites; sharps fade.
@@ -17,7 +16,6 @@ export const favFadeStrategy: Strategy = {
   name: "Heavy-Favorite Fade",
   thesis: "Bet the 2nd choice when the favorite is <2.0 (1-1) in fields of 8+.",
   evaluate(race) {
-    if (!isThoroughbred(classifyTrack(race.trackCode, race.track))) return null;
     const secondsToPost = (race.postTime - Date.now()) / 1000;
     if (secondsToPost < MIN_SECONDS_TO_POST) return null;
     const live = race.runners

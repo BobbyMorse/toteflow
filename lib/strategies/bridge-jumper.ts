@@ -1,6 +1,5 @@
 import type { Strategy } from "./types";
 import type { Race, Runner } from "../types";
-import { classifyTrack, isThoroughbred } from "../track-types";
 
 // Bridge-jumper SHOW fade — full pool-share detection.
 //
@@ -185,7 +184,6 @@ export const bridgeJumperStrategy: Strategy = {
   name: "Bridge-Jumper Show Fade",
   thesis: "SHOW the highest-EV non-target runner when a bridge-jumper has captured the show pool.",
   evaluate(race: Race) {
-    if (!isThoroughbred(classifyTrack(race.trackCode, race.track))) return null;
     const secondsToPost = (race.postTime - Date.now()) / 1000;
     if (secondsToPost < MIN_SECONDS_TO_POST) return null;
 

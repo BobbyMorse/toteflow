@@ -1,5 +1,4 @@
 import type { Strategy } from "./types";
-import { classifyTrack, isThoroughbred } from "../track-types";
 
 // Fresh-scratch arbitrage. When a horse scratches close to post the TVG model
 // re-normalizes winProbability across surviving runners on the next adapter
@@ -32,7 +31,6 @@ export const scratchBeneficiaryStrategy: Strategy = {
   name: "Scratch Beneficiary",
   thesis: "Ride the redistribution lag: when a horse scratches close to post, model EV updates instantly but the tote lags 30-90s. Capture the surviving runner with highest live EV before the pool catches up.",
   evaluate(race) {
-    if (!isThoroughbred(classifyTrack(race.trackCode, race.track))) return null;
     if (race.phase !== "action" && race.phase !== "chaos") return null;
     const secondsToPost = (race.postTime - Date.now()) / 1000;
     if (secondsToPost < MIN_SECONDS_TO_POST || secondsToPost > MAX_SECONDS_TO_POST) return null;

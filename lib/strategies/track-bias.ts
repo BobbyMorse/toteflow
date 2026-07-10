@@ -1,5 +1,4 @@
 import type { Strategy } from "./types";
-import { classifyTrack, isThoroughbred } from "../track-types";
 import { RaceResults } from "../race-results";
 
 // Same-day track-bias detector. Watches the day's earlier races at each track
@@ -46,7 +45,6 @@ export const trackBiasStrategy: Strategy = {
   name: "Same-Day Track Bias",
   thesis: "Detect inside/outside post bias from earlier races on the same track + surface, then ride horses whose tier matches the bias.",
   evaluate(race) {
-    if (!isThoroughbred(classifyTrack(race.trackCode, race.track))) return null;
     if (race.phase !== "action" && race.phase !== "chaos") return null;
     const secondsToPost = (race.postTime - Date.now()) / 1000;
     if (secondsToPost < MIN_SECONDS_TO_POST || secondsToPost > MAX_SECONDS_TO_POST) return null;

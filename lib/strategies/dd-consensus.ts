@@ -1,6 +1,5 @@
 import type { Strategy, StrategyEvaluation } from "./types";
 import type { Race, Runner } from "../types";
-import { classifyTrack, isThoroughbred } from "../track-types";
 
 // Daily Double — pair consecutive races at the same track when both have
 // the same kind of independent +EV WIN signal (model overlay). Thesis:
@@ -25,7 +24,6 @@ const MIN_LEG_EV_PCT = 2;              // each leg must show ≥2% WIN-pool EV
 const DD_TAKEOUT_FALLBACK = 0.21;
 
 function bestLegPick(race: Race): { runner: Runner; truP: number; evPct: number } | null {
-  if (!isThoroughbred(classifyTrack(race.trackCode, race.track))) return null;
   if (race.modelQuality !== "high") return null;
   const live = race.runners.filter(r => !r.scratched && r.currentOdds < 60 && (r.truePWin ?? 0) > 0);
   if (live.length < 5) return null;

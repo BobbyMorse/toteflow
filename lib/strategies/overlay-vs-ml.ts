@@ -1,5 +1,4 @@
 import type { Strategy } from "./types";
-import { classifyTrack, isThoroughbred } from "../track-types";
 
 // Morning line is set by the track handicapper. When current odds drift
 // significantly above the ML, the public is over-discounting a horse the
@@ -17,7 +16,6 @@ export const overlayVsMlStrategy: Strategy = {
   name: "Overlay vs Morning Line",
   thesis: "Bet runners whose current odds are 50%+ above a credible morning line.",
   evaluate(race) {
-    if (!isThoroughbred(classifyTrack(race.trackCode, race.track))) return null;
     const secondsToPost = (race.postTime - Date.now()) / 1000;
     if (secondsToPost < MIN_SECONDS_TO_POST) return null;
     const live = race.runners.filter(
