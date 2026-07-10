@@ -258,10 +258,13 @@ class Grader {
     // implied probability, which on bombs (decimal >= 60 in tvg.ts) collapses
     // to pure market and reads as ~-takeout regardless of our captured price.
     // We use that snapshot only as a fallback when capturedOdds is missing.
-    const baseCaptured = t.capturedEVRaw ?? t.capturedEV;
+    // Base off the strategy-calibrated capturedEV so closing EV stays on the
+    // same probability model as the "was" label the UI shows; using
+    // capturedEVRaw (the adapter's 65%-weight blend) made tvg-baseline rows
+    // read ~2× higher than the calibrated fire EV even when odds hadn't moved.
     const closingEV = deriveClosingEV({
       type: t.type,
-      capturedEV: baseCaptured,
+      capturedEV: t.capturedEV,
       capturedOdds: t.capturedOdds,
       closingOdds,
     }) ?? Closing.evFor(t.raceId, selected);
@@ -269,7 +272,7 @@ class Grader {
     // distinguished raw vs capped before the cap was removed.
     const closingEVRaw = deriveClosingEV({
       type: t.type,
-      capturedEV: baseCaptured,
+      capturedEV: t.capturedEV,
       capturedOdds: t.capturedOdds,
       closingOdds,
     }) ?? Closing.evRawFor(t.raceId, selected);

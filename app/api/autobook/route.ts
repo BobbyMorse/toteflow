@@ -57,13 +57,7 @@ function statsFor(strategyId: string, allTickets: Ticket[]): StrategyStats {
   // race-off snapshot's EV, which evaluates at closing PRICE and collapses to
   // ~-takeout for bombs. Same fallback the tickets page uses per-row.
   const closingEvValues = settled
-    .map(t => {
-      const base: Pick<Ticket, "type" | "capturedEV" | "capturedOdds" | "closingOdds"> = {
-        type: t.type, capturedEV: t.capturedEVRaw ?? t.capturedEV,
-        capturedOdds: t.capturedOdds, closingOdds: t.closingOdds,
-      };
-      return deriveClosingEV(base) ?? t.closingEV ?? null;
-    })
+    .map(t => deriveClosingEV(t) ?? t.closingEV ?? null)
     .filter((v): v is number => v != null);
   const avgClosingEV = closingEvValues.length
     ? closingEvValues.reduce((a, v) => a + v, 0) / closingEvValues.length
@@ -116,13 +110,7 @@ export async function GET() {
   // all bets. NOT realized money; clearly labeled as such on the UI.
   const predictedEdge = bets.reduce((a, t) => a + (t.capturedEV * t.stake) / 100, 0);
   const totalsClosingValues = settled
-    .map(t => {
-      const base: Pick<Ticket, "type" | "capturedEV" | "capturedOdds" | "closingOdds"> = {
-        type: t.type, capturedEV: t.capturedEVRaw ?? t.capturedEV,
-        capturedOdds: t.capturedOdds, closingOdds: t.closingOdds,
-      };
-      return deriveClosingEV(base) ?? t.closingEV ?? null;
-    })
+    .map(t => deriveClosingEV(t) ?? t.closingEV ?? null)
     .filter((v): v is number => v != null);
   const avgClosingEV = totalsClosingValues.length
     ? totalsClosingValues.reduce((a, v) => a + v, 0) / totalsClosingValues.length

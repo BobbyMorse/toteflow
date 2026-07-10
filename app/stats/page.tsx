@@ -547,11 +547,12 @@ function DayTicketsTable({ tickets }: { tickets: DayTicket[] }) {
             // (constant-trueP assumption). Same derivation as the tickets page
             // and lib/storage.deriveClosingEV. PLACE/SHOW/exotic can't be
             // rescaled from closingOdds alone, so we fall back to captured EV.
-            const baseCapturedForDerive = t.capturedEVRaw ?? t.capturedEV;
+            // Use strategy-calibrated capturedEV (not capturedEVRaw) so the
+            // closing number stays on the same probability model as the "was".
             const derivedClosingEV = t.type === "WIN"
               && t.closingOdds && t.closingOdds > 0
               && t.capturedOdds && t.capturedOdds > 0
-              ? (baseCapturedForDerive + 100) * (t.closingOdds / t.capturedOdds) - 100
+              ? (t.capturedEV + 100) * (t.closingOdds / t.capturedOdds) - 100
               : null;
             const effectiveClosingEV = derivedClosingEV ?? t.closingEV ?? null;
             const showClosingEV = t.type === "WIN" && effectiveClosingEV != null;

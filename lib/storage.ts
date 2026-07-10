@@ -288,10 +288,12 @@ function hydrate(): Store {
     let n = 0;
     for (const t of tickets) {
       if (t.status !== "won" && t.status !== "lost") continue;
-      const base = t.capturedEVRaw ?? t.capturedEV;
+      // Base off the strategy-calibrated capturedEV so closing EV matches the
+      // "was" label. Using capturedEVRaw (adapter 65% weight) here inflated
+      // tvg-baseline closing EVs to ~2× the calibrated fire EV.
       const derived = deriveClosingEV({
         type: t.type,
-        capturedEV: base,
+        capturedEV: t.capturedEV,
         capturedOdds: t.capturedOdds,
         closingOdds: t.closingOdds,
       });

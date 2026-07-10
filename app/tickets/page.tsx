@@ -966,11 +966,15 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
   // Prefer the derivation over the stored value because old rows may still
   // carry the race-off snapshot's EV, which evaluates at closing PRICE and
   // collapses to ~-takeout for bombs (the 80/1-but-shows-as-bad-EV bug).
-  const baseCapturedForDerive = t.capturedEVRaw ?? t.capturedEV;
+  //
+  // Use the strategy-calibrated capturedEV as the base so the closing number
+  // matches the "was" line's calibration. Falling back to capturedEVRaw made
+  // closing look ~2× higher on tvg-baseline (65% raw model weight vs 30%
+  // strategy weight) even when odds hadn't moved.
   const derivedClosingEV = t.type === "WIN"
     && t.closingOdds && t.closingOdds > 0
     && t.capturedOdds && t.capturedOdds > 0
-    ? (baseCapturedForDerive + 100) * (t.closingOdds / t.capturedOdds) - 100
+    ? (t.capturedEV + 100) * (t.closingOdds / t.capturedOdds) - 100
     : null;
   const effectiveClosingEV = derivedClosingEV ?? t.closingEV ?? null;
   const showClosingEV = t.type === "WIN" && effectiveClosingEV != null;
