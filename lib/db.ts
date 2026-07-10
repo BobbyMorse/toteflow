@@ -18,23 +18,28 @@ function ensureDataDir(): string {
 function openDb(): Database.Database {
   const dir = ensureDataDir();
   const file = path.join(dir, "toteflow.db");
-  const db = new Database(file);
-  db.pragma("busy_timeout = 30000");
-  db.pragma("journal_mode = WAL");
-  db.pragma("synchronous = NORMAL");
-  db.pragma("foreign_keys = ON");
-  applySchemaCrossProcessSafe(db, dir);
-  return db;
+  return withDbLock(dir, () => {
+    const db = new Database(file);
+    db.pragma("busy_timeout = 30000");
+    db.pragma("journal_mode = WAL");
+    db.pragma("synchronous = NORMAL");
+    db.pragma("foreign_keys = ON");
+    applySchema(db);
+    return db;
+  });
 }
 
-// Serialize applySchema across processes with a filesystem mutex. Necessary
+// Serialize DB init across processes with a filesystem mutex. Necessary
 // because `next build` spawns parallel worker processes to collect page data,
-// and each worker imports this module. Without a cross-process lock, multiple
-// workers race on `ALTER TABLE ADD COLUMN`: they all snapshot PRAGMA
-// table_info before any ADD commits, then all try to add the same column and
-// the losers throw "duplicate column name". SQLite's busy_timeout doesn't
-// help — that's for lock contention, not for logical duplicate DDL.
-function applySchemaCrossProcessSafe(db: Database.Database, dir: string): void {
+// and each worker imports this module. Two problems this prevents:
+//   1. `PRAGMA journal_mode = WAL` needs an exclusive lock. When the file is
+//      first being created, parallel workers race and one gets SQLITE_BUSY
+//      even with busy_timeout (the exclusive-lock wait isn't always covered).
+//   2. `ALTER TABLE ADD COLUMN`: without a lock, workers snapshot PRAGMA
+//      table_info before any ADD commits, then all try to add the same column
+//      and the losers throw "duplicate column name" (a logical error that
+//      busy_timeout doesn't help with).
+function withDbLock<T>(dir: string, fn: () => T): T {
   const lockPath = path.join(dir, ".schema.lock");
   const deadline = Date.now() + 60_000;
   let acquired = false;
@@ -54,14 +59,14 @@ function applySchemaCrossProcessSafe(db: Database.Database, dir: string): void {
           continue;
         }
       } catch { /* raced with unlink — retry */ }
-      if (Date.now() > deadline) throw new Error("timed out waiting for schema lock");
+      if (Date.now() > deadline) throw new Error("timed out waiting for db lock");
       // Synchronous ~50ms sleep. Atomics.wait needs SharedArrayBuffer, which is
       // fine on Node but noisy — this is simpler and only runs during startup.
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
     }
   }
   try {
-    applySchema(db);
+    return fn();
   } finally {
     try { fs.unlinkSync(lockPath); } catch { /* another process already cleaned up */ }
   }
@@ -163,7 +168,7 @@ export const db = globalThis.__toteflowDb ?? (globalThis.__toteflowDb = openDb()
 // applySchema is idempotent; re-run on HMR so newly-added columns land on a
 // db connection cached from before the schema change. Guarded by the same
 // cross-process lock so concurrent HMR reloads don't race either.
-applySchemaCrossProcessSafe(db, ensureDataDir());
+withDbLock(ensureDataDir(), () => applySchema(db));
 
 // Cleanly close on dev server shutdown — prevents WAL file lockup on restart.
 // Guarded by a global flag because Next.js HMR re-evaluates this module on
