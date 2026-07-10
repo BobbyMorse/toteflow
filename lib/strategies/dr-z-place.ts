@@ -30,10 +30,31 @@ const MIN_PLACE_POOL = 5_000;          // need real liquidity for breakage math
 // to a flat US-average if neither is available.
 const PLACE_PREMIUM = 0.02;
 const FALLBACK_PLACE_TAKEOUT = 0.18;
-function placeTakeout(race: Race): number {
+export function placeTakeout(race: Race): number {
   if (race.poolTakeout?.place && race.poolTakeout.place > 0) return race.poolTakeout.place;
   if (race.takeout > 0) return race.takeout + PLACE_PREMIUM;
   return FALLBACK_PLACE_TAKEOUT;
+}
+
+// Per-runner Dr.Z PLACE EV for the whole live field. Used at closing-snapshot
+// time so PLACE tickets can display closing EV the same way WIN tickets do.
+// Skips runners that fail the standard evPlace guards (scratched, missing pool
+// data, thin liquidity).
+export function computePlaceEVs(race: Race): Record<string, number> {
+  const live = race.runners.filter(r => !r.scratched && r.currentOdds < 60);
+  const out: Record<string, number> = {};
+  if (live.length < MIN_FIELD) return out;
+  const hasPoolData = live.some(r =>
+    r.winPoolAmount != null && r.placePoolAmount != null,
+  );
+  if (!hasPoolData) return out;
+  const pool = race.placePoolTotal ?? 0;
+  const takeout = placeTakeout(race);
+  for (const r of live) {
+    const ev = evPlace(r, live, pool, takeout);
+    if (ev != null) out[r.program] = ev;
+  }
+  return out;
 }
 
 function poolShares(runners: Runner[], key: "winPoolAmount" | "placePoolAmount" | "showPoolAmount"): Map<string, number> | null {
@@ -78,7 +99,7 @@ function topTwoJointProbs(targetProgram: string, winP: Map<string, number>): {
 
 // EV per $1 of placing $1 on `target` to PLACE, given the current pool
 // composition. Returns null if data is insufficient.
-function evPlace(target: Runner, runners: Runner[], placePoolTotal: number, takeout: number): number | null {
+export function evPlace(target: Runner, runners: Runner[], placePoolTotal: number, takeout: number): number | null {
   const winP = poolShares(runners, "winPoolAmount");
   if (!winP || !winP.has(target.program)) return null;
 

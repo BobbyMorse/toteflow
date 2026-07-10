@@ -17,6 +17,7 @@
 import { liveProviders } from "./adapters";
 import { Tickets, AutoBook, Closing } from "./storage";
 import { strategies } from "./strategies";
+import { computePlaceEVs } from "./strategies/dr-z-place";
 import type { Race, Ticket } from "./types";
 import type { Strategy, StrategyConfig, StrategyEvaluation } from "./strategies/types";
 import { detectCarryovers, type CarryoverOpportunity } from "./carryovers";
@@ -580,7 +581,14 @@ class Engine {
       ev[rn.program] = rn.evPercent;
       if (rn.evPercentRaw != null) evRaw[rn.program] = rn.evPercentRaw;
     }
-    Closing.snapshot(race.id, odds, ev, evRaw);
+    // PLACE closing EV: run the Dr.Z Ziemba/Hausch calc against the closing
+    // pool composition. Empty (returned as undefined) when the race lacks
+    // per-runner pool data or place-pool liquidity — PLACE tickets in those
+    // races simply won't have a closing EV to grade against, same as WIN
+    // bets on races without an odds snapshot.
+    const placeEv = computePlaceEVs(race);
+    const placeEvOrNone = Object.keys(placeEv).length ? placeEv : undefined;
+    Closing.snapshot(race.id, odds, ev, evRaw, placeEvOrNone);
   }
 
   private considerStrategy(strategy: Strategy, race: Race, now: number): "staged" | "pivoted" | "refreshed" | "matched" | "below-threshold" | "skipped" {

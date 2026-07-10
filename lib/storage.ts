@@ -17,6 +17,11 @@ interface ClosingOddsSnap {
   odds: Record<string, number>;
   ev: Record<string, number>;
   evRaw?: Record<string, number>;
+  // Per-runner PLACE-pool EV at race-off (Dr.Z Ziemba/Hausch). Populated
+  // whenever the race exposes per-runner pool amounts + adequate liquidity.
+  // Used to grade closing EV on PLACE tickets, analogously to how `ev`
+  // grades WIN tickets.
+  placeEv?: Record<string, number>;
 }
 
 interface Store {
@@ -452,6 +457,7 @@ export const Closing = {
     oddsByProgram: Record<string, number>,
     evByProgram: Record<string, number>,
     evRawByProgram?: Record<string, number>,
+    placeEvByProgram?: Record<string, number>,
   ) {
     store.closingOdds.set(raceId, {
       raceId,
@@ -459,6 +465,7 @@ export const Closing = {
       odds: oddsByProgram,
       ev: evByProgram,
       evRaw: evRawByProgram,
+      placeEv: placeEvByProgram,
     });
   },
   oddsFor(raceId: string, program: string): number | undefined {
@@ -471,6 +478,9 @@ export const Closing = {
   },
   evRawFor(raceId: string, program: string): number | undefined {
     return store.closingOdds.get(raceId)?.evRaw?.[program];
+  },
+  placeEvFor(raceId: string, program: string): number | undefined {
+    return store.closingOdds.get(raceId)?.placeEv?.[program];
   },
 };
 

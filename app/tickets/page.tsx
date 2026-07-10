@@ -952,32 +952,27 @@ function LogPanel({ title, entries }: { title: string; entries: { ts: number; ms
 function TicketRow({ ticket: t }: { ticket: Ticket }) {
   const settled = t.status === "won" || t.status === "lost";
   const pl = t.realizedPL ?? 0;
-  // CLV + closingEV are both WIN-only — the closing snapshot stores WIN-pool
-  // odds and WIN-pool model EV. Displaying them on a PLACE/SHOW/exotic bet
-  // would compare it to the wrong pool, which is what produced the misleading
-  // "-1.6%" on PLACE rows. Suppress instead of mis-display.
+  // CLV = WIN-only — the closing snapshot stores WIN-pool odds; PLACE/SHOW/
+  // exotic bets aren't scored against that pool.
   const clv = t.type === "WIN" && t.closingOdds && t.capturedOdds
     ? ((t.capturedOdds - t.closingOdds) / t.closingOdds) * 100
     : null;
-  // Closing EV grades the bet WE locked in. Derive by scaling captured EV by
-  // the odds drift (constant-trueP assumption): odds drifting OUT on the same
-  // horse makes our bet MORE valuable.
-  //
-  // Prefer the derivation over the stored value because old rows may still
-  // carry the race-off snapshot's EV, which evaluates at closing PRICE and
-  // collapses to ~-takeout for bombs (the 80/1-but-shows-as-bad-EV bug).
-  //
-  // Use the strategy-calibrated capturedEV as the base so the closing number
-  // matches the "was" line's calibration. Falling back to capturedEVRaw made
-  // closing look ~2× higher on tvg-baseline (65% raw model weight vs 30%
-  // strategy weight) even when odds hadn't moved.
+  // Closing EV grades the bet WE locked in.
+  // - WIN: derive by scaling captured EV by the odds drift (constant-trueP:
+  //   same horse, same model probability, just rescaled payout). We prefer
+  //   the derivation over any stored value because old rows carried the
+  //   race-off market-price EV, which collapses to ~-takeout on bombs.
+  // - PLACE: use the stored value directly. It's the Dr.Z Ziemba/Hausch EV
+  //   re-computed against the closing PLACE-pool composition, snapshotted
+  //   pre-off by autobook. No simple scaling exists for PLACE — the EV
+  //   depends on the full pool, not just this horse's odds.
   const derivedClosingEV = t.type === "WIN"
     && t.closingOdds && t.closingOdds > 0
     && t.capturedOdds && t.capturedOdds > 0
     ? (t.capturedEV + 100) * (t.closingOdds / t.capturedOdds) - 100
     : null;
   const effectiveClosingEV = derivedClosingEV ?? t.closingEV ?? null;
-  const showClosingEV = t.type === "WIN" && effectiveClosingEV != null;
+  const showClosingEV = (t.type === "WIN" || t.type === "PLACE") && effectiveClosingEV != null;
   // Booked = the odds we promoted at (what a human would have gotten on FanDuel).
   // Final  = the closing tote odds (what the payout was actually computed from).
   // The gap between them is CLV; we surface both so the user can audit the gap directly.
@@ -1144,7 +1139,9 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
             <>
               <span className={clsx("font-mono tabular-nums font-semibold",
                 effectiveClosingEV! >= 0 ? "text-accent-overlay" : "text-accent-steam")}
-                title="Closing EV at our captured price — scaled from fire-time EV by the odds drift. Constant-trueP assumption: same horse, same model probability, just rescaled payout.">
+                title={t.type === "PLACE"
+                  ? "Closing PLACE EV — Dr.Z Ziemba/Hausch formula re-run against the closing PLACE-pool composition (snapshotted pre-off)."
+                  : "Closing EV at our captured price — scaled from fire-time EV by the odds drift. Constant-trueP assumption: same horse, same model probability, just rescaled payout."}>
                 {effectiveClosingEV! >= 0 ? "+" : ""}{effectiveClosingEV!.toFixed(1)}%
                 <EVExplainer
                   context="history"
@@ -1160,9 +1157,9 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
           ) : (
             <span className={clsx("font-mono tabular-nums",
               t.capturedEV > 0 ? "text-accent-overlay" : "text-accent-steam")}
-              title={t.type === "WIN"
-                ? "EV captured at fire moment · closing EV pending (race not settled, or pool-pricing bet without a per-runner closing odds snapshot)"
-                : `EV captured at fire moment · closing EV is WIN-pool only and not meaningful for ${t.type}`}>
+              title={t.type === "WIN" || t.type === "PLACE"
+                ? "EV captured at fire moment · closing EV pending (race not settled, or pool-pricing bet without a per-runner closing snapshot)"
+                : `EV captured at fire moment · closing EV not tracked for ${t.type}`}>
               {t.capturedEV >= 0 ? "+" : ""}{t.capturedEV.toFixed(1)}%
               <EVExplainer
                 context="history"

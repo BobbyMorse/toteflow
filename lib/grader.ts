@@ -262,20 +262,31 @@ class Grader {
     // same probability model as the "was" label the UI shows; using
     // capturedEVRaw (the adapter's 65%-weight blend) made tvg-baseline rows
     // read ~2× higher than the calibrated fire EV even when odds hadn't moved.
-    const closingEV = deriveClosingEV({
-      type: t.type,
-      capturedEV: t.capturedEV,
-      capturedOdds: t.capturedOdds,
-      closingOdds,
-    }) ?? Closing.evFor(t.raceId, selected);
+    // WIN closing EV = scaled from captured (constant-trueP). PLACE closing
+    // EV = re-run Dr.Z formula against closing pool composition, snapshotted
+    // pre-off. The scaling trick doesn't work for PLACE — closing PLACE EV
+    // depends on the full pool composition, not just this horse's odds.
+    let closingEV: number | undefined;
+    if (t.type === "PLACE") {
+      closingEV = Closing.placeEvFor(t.raceId, selected);
+    } else {
+      closingEV = deriveClosingEV({
+        type: t.type,
+        capturedEV: t.capturedEV,
+        capturedOdds: t.capturedOdds,
+        closingOdds,
+      }) ?? Closing.evFor(t.raceId, selected);
+    }
     // Raw mirror — same formula, kept for back-compat with rows that
     // distinguished raw vs capped before the cap was removed.
-    const closingEVRaw = deriveClosingEV({
-      type: t.type,
-      capturedEV: t.capturedEV,
-      capturedOdds: t.capturedOdds,
-      closingOdds,
-    }) ?? Closing.evRawFor(t.raceId, selected);
+    const closingEVRaw = t.type === "PLACE"
+      ? closingEV
+      : deriveClosingEV({
+          type: t.type,
+          capturedEV: t.capturedEV,
+          capturedOdds: t.capturedOdds,
+          closingOdds,
+        }) ?? Closing.evRawFor(t.raceId, selected);
 
     Tickets.update(t.id, {
       status: won ? "won" : "lost",
