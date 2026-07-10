@@ -53,10 +53,17 @@ type TvgResultRunner = NonNullable<NonNullable<TvgResults["results"]>["runners"]
 // last leg, plus result-posting lag).
 const STALE_OPEN_MS = 4 * 60 * 60_000;
 
+// TVG marks scratched runners with a null/empty finishStatus AND no finishPosition.
+// Runners that ran get finishStatus populated (WIN/PLC/SHW/etc.) even if off-board.
+function isScratched(rn: TvgResultRunner | undefined): boolean {
+  if (!rn) return false;
+  return !rn.finishStatus && rn.finishPosition == null;
+}
+
 class Grader {
   // Marker bumped whenever settle logic adds new ticket types — read by the
   // HMR staleness check below so dev reloads pick up the new settle paths.
-  readonly version = 3;
+  readonly version = 4;
   started = false;
   lastTick = 0;
   inFlight: Promise<void> | null = null;
@@ -209,6 +216,31 @@ class Grader {
       .sort((a, b) => (a.finishPosition ?? 99) - (b.finishPosition ?? 99))
       .map(rn => String(rn.biNumber));
 
+    // Scratch handling. WIN/PLACE/SHOW: if our horse didn't run, refund the
+    // stake (void, realizedPL 0). EXACTA/TRIFECTA box: if ANY selected horse
+    // was scratched, refund — matches standard track rules for boxed tickets.
+    const scratchedSelections = t.selections.filter(sel =>
+      isScratched(runners.find(rn => String(rn.biNumber) === String(sel))),
+    );
+    const single = t.type === "WIN" || t.type === "PLACE" || t.type === "SHOW";
+    const exoticBox = t.type === "EXACTA" || t.type === "TRIFECTA";
+    if ((single && scratchedSelections.length > 0)
+        || (exoticBox && scratchedSelections.length > 0)) {
+      Tickets.update(t.id, {
+        status: "void",
+        settledAt: Date.now(),
+        realizedPL: 0,
+        winners: finishOrder,
+        abortReason: `scratched #${scratchedSelections.join(",#")}`,
+      });
+      const tag = t.strategyId ? `[${t.strategyId}] ` : "";
+      const pickLabel = t.selections.length > 1 ? t.selections.map(s => `#${s}`).join("-") : `#${selected}`;
+      this.note(
+        `${tag}VOID ${t.raceId} ${t.type} ${pickLabel} · scratched (#${scratchedSelections.join(",#")}) · refund $${t.stake.toFixed(2)}`,
+      );
+      return;
+    }
+
     let won = false, payout = 0;
     if (t.type === "WIN") {
       if (myFinish?.finishPosition === 1 && myFinish.winPayoff && myFinish.betAmount) {
@@ -323,9 +355,14 @@ class Grader {
     if (!t.legs?.length || !t.trackCode) return;
 
     // Gather each leg's race result. If any leg isn't final or missing from
-    // the feed, defer until next tick.
+    // the feed, defer until next tick. Also detect scratches: if every horse
+    // we selected on a leg was scratched, the leg is unplayable and the whole
+    // ticket refunds (standard multi-race rule — track will substitute the
+    // post-time favorite, which our paper P/L doesn't model, so honest thing
+    // is to void rather than fabricate a substitution outcome).
     type LegOutcome = { raceNumber: number; winner: string | null; final: boolean };
     const outcomes: LegOutcome[] = [];
+    const scratchedLegs: number[] = [];
     for (const leg of t.legs) {
       const race = byTrackRace.get(`${t.trackCode}-${leg.raceNumber}`);
       if (!race) return;     // not yet in feed; try again later
@@ -334,7 +371,26 @@ class Grader {
       const runners = race.results?.runners ?? [];
       const winner = runners.find(r => r.finishPosition === 1);
       if (!winner) return;   // result not fully posted yet
+      const liveSelections = leg.selections.filter(sel =>
+        !isScratched(runners.find(rn => String(rn.biNumber) === String(sel))),
+      );
+      if (liveSelections.length === 0) scratchedLegs.push(leg.raceNumber);
       outcomes.push({ raceNumber: leg.raceNumber, winner: String(winner.biNumber), final: true });
+    }
+
+    if (scratchedLegs.length > 0) {
+      Tickets.update(t.id, {
+        status: "void",
+        settledAt: Date.now(),
+        realizedPL: 0,
+        winners: outcomes.map(o => o.winner!),
+        abortReason: `all picks scratched on leg(s) ${scratchedLegs.map(n => `R${n}`).join(",")}`,
+      });
+      this.note(
+        `[${t.strategyId ?? "manual"}] VOID ${t.trackCode} ${t.type} R${t.raceNumber} · ` +
+        `all picks scratched on ${scratchedLegs.map(n => `R${n}`).join(",")} · refund $${t.stake.toFixed(2)}`,
+      );
+      return;
     }
 
     // Hit every leg?
@@ -370,7 +426,7 @@ const cachedGrader = globalThis.__toteflowGrader;
 const graderStale = !!cachedGrader && (
   typeof (cachedGrader as any).settlePickN !== "function" ||
   typeof (cachedGrader as any).sweepStaleOpen !== "function" ||
-  ((cachedGrader as any).version ?? 0) < 3
+  ((cachedGrader as any).version ?? 0) < 4
 );
 export const grader = (cachedGrader && !graderStale)
   ? cachedGrader
