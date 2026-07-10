@@ -54,12 +54,6 @@ const defaultPerStrategy: Record<string, StrategyConfig> = {
   // Disabled — never validated, no signal yet
   "lone-speed":     { enabled: false, evThreshold: 5,  stake: 20, fireAtPhase: "action" },
   "always-fav":     { enabled: false, evThreshold: -100, stake: 20, fireAtPhase: "action" },
-  // Disabled — information-speed strategies that fire too late for manual
-  // placement on FD/DK. late-steam fires at T-30s; scratch-beneficiary fires
-  // inside T-3min. Both require sub-minute reaction time, which retail
-  // platforms don't expose programmatically.
-  "late-steam":     { enabled: false, evThreshold: 8,  stake: 20, fireAtPhase: "chaos"  },
-  "scratch-beneficiary": { enabled: false, evThreshold: 1, stake: 20, fireAtPhase: "action" },
   // Enabled — structural edge, math-based, manually playable
   "fav-fade":       { enabled: true,  evThreshold: 3,  stake: 20, fireAtPhase: "action" },
   "pass-control":   { enabled: true,  evThreshold: 0,  stake: 20, fireAtPhase: "action" },
@@ -259,24 +253,6 @@ function hydrate(): Store {
   }
   const globalEnabledRaw = (stmtGetMeta.get("globalEnabled") as { value: string } | undefined)?.value;
   if (!globalEnabledRaw) stmtSetMeta.run("globalEnabled", "true");
-
-  // One-time migration: strategies whose firing windows are too tight to
-  // place manually on FanDuel/DraftKings cannot produce paper P/L that maps
-  // to real-money play. Force-disable them once on existing installs that
-  // still have them enabled. Tracked via a versioned meta key so it doesn't
-  // stomp a user who later re-enables them intentionally.
-  const MIGRATION_KEY = "settings_migration_v1_manual_play";
-  const migrationDone = (stmtGetMeta.get(MIGRATION_KEY) as { value: string } | undefined)?.value;
-  if (!migrationDone) {
-    const forceDisable = ["late-steam", "scratch-beneficiary"];
-    for (const id of forceDisable) {
-      if (configs[id]?.enabled) {
-        configs[id] = { ...configs[id], enabled: false };
-        stmtUpsertStrategyConfig.run(configToRow(id, configs[id]));
-      }
-    }
-    stmtSetMeta.run(MIGRATION_KEY, "done");
-  }
 
   // Reconcile every hydration: recompute closingEV for every settled WIN
   // ticket from the odds drift (using raw captured when available, else

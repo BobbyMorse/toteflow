@@ -40,7 +40,6 @@ Built-in strategies:
 | `tvg-baseline` | Trust TVG&apos;s winProbability model when modelQuality is high |
 | `overlay-vs-ml` | Bet horses whose current odds drift 50%+ above morning line |
 | `fav-fade` | Fade heavy favorites in deep fields; bet the 2nd choice |
-| `late-steam` | Bet runners whose odds dropped 12%+ in the last 60s on liquid pools |
 | `lone-speed` | Shell — needs pace-rating data |
 | `pass-control` | Never bets — control group |
 
