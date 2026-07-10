@@ -9,7 +9,7 @@ export async function GET() {
   const rows = Tickets.list();
   const header = [
     "id","placedAt","strategyId","raceId","trackCode","trackName","raceNumber",
-    "horseName","type","selection","stake","capturedOdds","capturedEV",
+    "horseName","type","selection","legs","stake","capturedOdds","capturedEV",
     "potentialPayout","postTime","status","mode","settledAt","realizedPL",
     "closingOdds","clvPct","winners","reason",
   ];
@@ -21,6 +21,7 @@ export async function GET() {
       ? ((t.capturedOdds - t.closingOdds) / t.closingOdds * 100).toFixed(2)
       : "";
     const winners = (t.winners ?? []).join("|");
+    const legs = (t.legs ?? []).map(l => `R${l.raceNumber}:${l.selections.join("-")}`).join(" ");
     const reason = (t.reason ?? "").replace(/[",\n\r]/g, " ").trim();
     lines.push([
       t.id,
@@ -33,6 +34,7 @@ export async function GET() {
       `"${(t.horseName ?? "").replace(/"/g, '""')}"`,
       t.type,
       sel,
+      `"${legs}"`,
       t.stake.toFixed(2),
       t.capturedOdds.toFixed(2),
       t.capturedEV.toFixed(2),

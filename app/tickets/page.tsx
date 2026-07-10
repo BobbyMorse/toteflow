@@ -1199,19 +1199,46 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
       )}
       {settled && finishOrder.length > 0 && (
         <div className="mt-0.5 sm:ml-[250px] text-[11px] font-mono text-ink-2 flex flex-wrap items-baseline gap-x-2">
-          <span className="uppercase tracking-wider">finish:</span>
-          {finishOrder.map((p, i) => (
-            <span key={i} className={clsx(
-              myPick && p === myPick
-                ? (t.status === "won" ? "text-accent-overlay font-semibold" : "text-accent-warn font-semibold")
-                : "text-ink-1",
-            )}>
-              {i + 1}. #{p}
-            </span>
-          ))}
-          {myFinishLabel
-            ? <span className="text-ink-2">· pick #{myPick} → {myFinishLabel}</span>
-            : (myPick && <span className="text-ink-2">· pick #{myPick} off board</span>)}
+          {t.legs?.length ? (
+            <>
+              <span className="uppercase tracking-wider">legs:</span>
+              {t.legs.map((leg, i) => {
+                const winner = finishOrder[i];
+                const hit = winner != null && leg.selections.includes(winner);
+                return (
+                  <span key={i} className="whitespace-nowrap">
+                    <span className="text-ink-2">R{leg.raceNumber}</span>
+                    <span className="text-ink-2 mx-1">→</span>
+                    <span className={clsx("font-semibold",
+                      hit ? "text-accent-overlay" : "text-accent-steam")}>
+                      #{winner ?? "?"}
+                    </span>
+                    <span className={clsx("ml-1", hit ? "text-accent-overlay" : "text-accent-steam")}>
+                      {hit ? "✓" : "✗"}
+                    </span>
+                    <span className="text-ink-2/70 ml-1">(of {leg.selections.join("-")})</span>
+                    {i < t.legs!.length - 1 && <span className="text-ink-2/40 ml-2">·</span>}
+                  </span>
+                );
+              })}
+            </>
+          ) : (
+            <>
+              <span className="uppercase tracking-wider">finish:</span>
+              {finishOrder.map((p, i) => (
+                <span key={i} className={clsx(
+                  myPick && p === myPick
+                    ? (t.status === "won" ? "text-accent-overlay font-semibold" : "text-accent-warn font-semibold")
+                    : "text-ink-1",
+                )}>
+                  {i + 1}. #{p}
+                </span>
+              ))}
+              {myFinishLabel
+                ? <span className="text-ink-2">· pick #{myPick} → {myFinishLabel}</span>
+                : (myPick && <span className="text-ink-2">· pick #{myPick} off board</span>)}
+            </>
+          )}
           <VerifyLinksInline ticket={t} settled={settled} />
         </div>
       )}
