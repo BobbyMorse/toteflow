@@ -12,6 +12,7 @@
 // only single-race wagers.)
 
 import type { Race } from "./types";
+import type { TrackType } from "./track-types";
 import { liveProviders } from "./adapters";
 
 export interface CarryoverPick {
@@ -33,6 +34,7 @@ export interface CarryoverLeg {
 export interface CarryoverOpportunity {
   trackCode: string;
   trackName: string;
+  trackType?: TrackType;          // discipline gate: booker checks this against the strategy's appliesTo
   startRaceNumber: number;        // first race in the sequence
   postTime: number;               // when the sequence opens
   wagerType: string;              // "P4", "P5", "P6", etc.
@@ -168,6 +170,7 @@ export async function detectCarryovers(): Promise<CarryoverOpportunity[]> {
     out.push({
       trackCode: race.trackCode,
       trackName: race.track,
+      trackType: race.trackType,
       startRaceNumber: race.raceNumber,
       postTime: race.postTime,
       wagerType: code,

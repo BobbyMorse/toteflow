@@ -15,6 +15,7 @@ const MIN_SECONDS_TO_POST = 60;  // late-steam is chaos-phase; tighter window OK
 
 export const lateSteamStrategy: Strategy = {
   id: "late-steam",
+  appliesTo: ["thoroughbred"],
   name: "Late Steam",
   thesis: "Bet runners whose odds dropped 12%+ in the last 60s on liquid pools.",
   evaluate(race) {

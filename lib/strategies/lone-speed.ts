@@ -9,6 +9,7 @@ import type { Strategy } from "./types";
 
 export const loneSpeedStrategy: Strategy = {
   id: "lone-speed",
+  appliesTo: ["thoroughbred"],
   name: "Lone Speed",
   thesis: "Bet the only E/EP-rated horse when no other front-runner is in the race.",
   evaluate() {

@@ -28,6 +28,7 @@ const MAX_LIVE_ODDS = 30;                    // skip huge longshots — EV noise
 
 export const scratchBeneficiaryStrategy: Strategy = {
   id: "scratch-beneficiary",
+  appliesTo: ["thoroughbred"],
   name: "Scratch Beneficiary",
   thesis: "Ride the redistribution lag: when a horse scratches close to post, model EV updates instantly but the tote lags 30-90s. Capture the surviving runner with highest live EV before the pool catches up.",
   evaluate(race) {

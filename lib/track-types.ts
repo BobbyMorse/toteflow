@@ -96,6 +96,35 @@ export function isThoroughbred(type: TrackType): boolean {
       || type === "thoroughbred-international";
 }
 
+// Coarser grouping for strategy scoping. Strategies declare which disciplines
+// they apply to via `Strategy.appliesTo`; the autobook uses this to gate races
+// before evaluation, so a thoroughbred strategy never sees a harness card and
+// vice-versa. Keeps breed-specific strategies isolated so adding a harness
+// group can't contaminate the thoroughbred P&L.
+export type Discipline = "thoroughbred" | "harness" | "quarter-horse";
+
+export function disciplineOfTrack(type: TrackType | undefined): Discipline | null {
+  switch (type) {
+    case "thoroughbred-major":
+    case "thoroughbred-minor":
+    case "thoroughbred-international":
+      return "thoroughbred";
+    case "harness":         return "harness";
+    case "quarter-horse":   return "quarter-horse";
+    default:                return null; // international / unknown never match a strategy
+  }
+}
+
+export function strategyAppliesToTrack(
+  appliesTo: readonly Discipline[] | undefined,
+  trackType: TrackType | undefined,
+): boolean {
+  const d = disciplineOfTrack(trackType);
+  if (!d) return false;
+  if (!appliesTo || appliesTo.length === 0) return false;
+  return appliesTo.includes(d);
+}
+
 export function isFanduelBettable(type: TrackType): boolean {
   // FanDuel Racing carries US thoroughbred + commingled international flats
   // through TVG. Harness coverage is spotty and not all states. Recommend

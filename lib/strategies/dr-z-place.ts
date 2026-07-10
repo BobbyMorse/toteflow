@@ -148,6 +148,7 @@ export function evPlace(target: Runner, runners: Runner[], placePoolTotal: numbe
 
 export const drZPlaceStrategy: Strategy = {
   id: "dr-z-place",
+  appliesTo: ["thoroughbred"],
   name: "Dr. Z Place",
   thesis: "Place-pool mispricing: bet PLACE when win-pool prob materially exceeds place-pool prob (Ziemba & Hausch).",
   evaluate(race: Race) {

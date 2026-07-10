@@ -13,6 +13,7 @@ const MIN_SECONDS_TO_POST = 90;
 
 export const overlayVsMlStrategy: Strategy = {
   id: "overlay-vs-ml",
+  appliesTo: ["thoroughbred"],
   name: "Overlay vs Morning Line",
   thesis: "Bet runners whose current odds are 50%+ above a credible morning line.",
   evaluate(race) {

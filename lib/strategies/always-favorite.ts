@@ -6,6 +6,7 @@ import type { Strategy } from "./types";
 
 export const alwaysFavoriteStrategy: Strategy = {
   id: "always-fav",
+  appliesTo: ["thoroughbred"],
   name: "Always Favorite (test)",
   thesis: "Bets the favorite on every race. Pipeline-verification strategy, not a real edge.",
   evaluate(race) {

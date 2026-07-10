@@ -44,6 +44,7 @@ function ddTakeout(race: Race): number {
 
 export const ddConsensusStrategy: Strategy = {
   id: "dd-consensus",
+  appliesTo: ["thoroughbred"],
   name: "Daily Double Consensus",
   thesis: "Pair top model-overlay picks in two consecutive races at the same track into a single-combo DD.",
   // Per-race entry is a no-op — DD lives entirely in the cross-race pass.

@@ -16,6 +16,7 @@ import type { Strategy } from "./types";
 
 export const carryoverPicknStrategy: Strategy = {
   id: "carryover-pickn",
+  appliesTo: ["thoroughbred"],
   name: "Carryover Pick-N",
   thesis:
     "Books caveman top-2-per-leg Pick-N tickets when the scanner finds an exotic pool " +

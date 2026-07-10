@@ -1,4 +1,5 @@
 import type { Race, Ticket } from "../types";
+import type { Discipline } from "../track-types";
 
 export interface StrategyEvaluation {
   // Single-pick wagers (WIN/PLACE/SHOW): set `selection`. The autobook stages
@@ -45,6 +46,11 @@ export interface Strategy {
   id: string;
   name: string;
   thesis: string;
+  // Which racing disciplines this strategy is designed for. The autobook filters
+  // races by discipline before calling evaluate, so a thoroughbred strategy never
+  // sees a harness card. Add ["harness"] or ["quarter-horse"] to build breed-
+  // specific strategy groups without contaminating existing thoroughbred P&L.
+  appliesTo: readonly Discipline[];
   // Per-race evaluation. Called once per visible race per tick. Returns null
   // to opt out. Single-pick wagers and in-race exotics use this path.
   evaluate(race: Race): StrategyEvaluation | null;

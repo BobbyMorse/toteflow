@@ -13,6 +13,7 @@ const MIN_SECONDS_TO_POST = 90;
 
 export const favFadeStrategy: Strategy = {
   id: "fav-fade",
+  appliesTo: ["thoroughbred"],
   name: "Heavy-Favorite Fade",
   thesis: "Bet the 2nd choice when the favorite is <2.0 (1-1) in fields of 8+.",
   evaluate(race) {

@@ -181,6 +181,7 @@ function findBridgeTarget(runners: Runner[]): string | null {
 
 export const bridgeJumperStrategy: Strategy = {
   id: "bridge-jumper",
+  appliesTo: ["thoroughbred"],
   name: "Bridge-Jumper Show Fade",
   thesis: "SHOW the highest-EV non-target runner when a bridge-jumper has captured the show pool.",
   evaluate(race: Race) {

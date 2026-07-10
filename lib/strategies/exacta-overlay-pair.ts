@@ -68,6 +68,7 @@ function exactaTakeout(race: Race): number {
 
 export const exactaOverlayPairStrategy: Strategy = {
   id: "exacta-overlay-pair",
+  appliesTo: ["thoroughbred"],
   name: "Exacta Overlay Pair",
   thesis: "Box top-2 model contenders when both have +EV vs WIN pool and dominate the field. Skip chalk-on-chalk pairings (where exacta pool is overpriced).",
   evaluate(race: Race): StrategyEvaluation | null {

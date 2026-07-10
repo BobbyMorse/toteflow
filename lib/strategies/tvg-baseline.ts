@@ -20,6 +20,7 @@ const FALLBACK_TAKEOUT = 0.16;
 
 export const tvgBaselineStrategy: Strategy = {
   id: "tvg-baseline",
+  appliesTo: ["thoroughbred"],
   name: "TVG Model Baseline",
   thesis: "Trust TVG's winProbability when modelQuality === 'high', calibrated against realized P/L. Thoroughbred only.",
   evaluate(race) {

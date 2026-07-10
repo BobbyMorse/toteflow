@@ -41,6 +41,7 @@ function trifectaTakeout(race: Race): number {
 
 export const trifectaKeyStrategy: Strategy = {
   id: "trifecta-key",
+  appliesTo: ["thoroughbred"],
   name: "Trifecta Top-3 Box",
   thesis: "Box the model's top 3 contenders when they meaningfully outrun the field — any in-the-money order pays.",
   evaluate(race: Race): StrategyEvaluation | null {

@@ -5,6 +5,7 @@ import type { Strategy } from "./types";
 
 export const passControlStrategy: Strategy = {
   id: "pass-control",
+  appliesTo: ["thoroughbred"],
   name: "Pass Control",
   thesis: "Never bets. If active strategies don't beat $0 P/L, none of them work.",
   evaluate() {

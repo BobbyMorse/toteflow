@@ -24,6 +24,7 @@ import { detectCarryovers, type CarryoverOpportunity } from "./carryovers";
 import { decideBetWindow } from "./optimal-timer";
 import { minBaseForWager } from "./wager-minimums";
 import { strategyCalibratedTrueP } from "./strategy-calibration";
+import { strategyAppliesToTrack } from "./track-types";
 
 function phaseOf(race: Race, now: number): Race["phase"] {
   const ms = race.postTime - now;
@@ -154,8 +155,13 @@ class Engine {
       if (typeof s.evaluateCrossRace !== "function") continue;
       const cfg = AutoBook.strategyConfig(s.id);
       if (!cfg || !cfg.enabled) continue;
+      // Only expose races in disciplines this strategy handles — same reason as
+      // the per-race discipline gate above. A thoroughbred DD strategy should
+      // never see harness races when scanning for leg pairs.
+      const eligible = races.filter(r => strategyAppliesToTrack(s.appliesTo, r.trackType));
+      if (eligible.length === 0) continue;
       let evals: StrategyEvaluation[] = [];
-      try { evals = s.evaluateCrossRace(races) ?? []; }
+      try { evals = s.evaluateCrossRace(eligible) ?? []; }
       catch (e) { this.note(`${s.id} cross-race eval error: ${(e as Error).message}`); continue; }
       for (const ev of evals) {
         if (ev.evPercent < cfg.evThreshold) continue;
@@ -387,6 +393,13 @@ class Engine {
     const cfg = AutoBook.strategyConfig(CARRYOVER_STRATEGY_ID);
     if (!cfg || !cfg.enabled) return;
 
+    // Discipline gate — respect the strategy's declared appliesTo. Prevents a
+    // future harness carryover strategy from booking against thoroughbred
+    // opportunities (and vice-versa).
+    const carryoverStrategy = strategies.find(s => s.id === CARRYOVER_STRATEGY_ID);
+    if (!carryoverStrategy) return;
+    if (!strategyAppliesToTrack(carryoverStrategy.appliesTo, o.trackType)) return;
+
     // Gates — fail fast and quietly. We already logged the alert above.
     if (o.confidence !== "high") return;
     if (o.rawEdgePct < cfg.evThreshold) return;
@@ -594,6 +607,11 @@ class Engine {
   private considerStrategy(strategy: Strategy, race: Race, now: number): "staged" | "pivoted" | "refreshed" | "matched" | "below-threshold" | "skipped" {
     const cfg = AutoBook.strategyConfig(strategy.id);
     if (!cfg || !cfg.enabled) return "skipped";
+
+    // Discipline gate: strategies declare which breeds they apply to. Keeps
+    // thoroughbred strategies from ever being evaluated against harness/QH
+    // races (and vice-versa) so per-breed strategy groups stay isolated.
+    if (!strategyAppliesToTrack(strategy.appliesTo, race.trackType)) return "skipped";
 
     const phase = phaseOf(race, now);
     if (!phaseAllowed(cfg.fireAtPhase, phase)) return "skipped";

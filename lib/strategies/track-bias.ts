@@ -42,6 +42,7 @@ function tierOf(program: string, fieldSize: number): Tier | null {
 
 export const trackBiasStrategy: Strategy = {
   id: "track-bias",
+  appliesTo: ["thoroughbred"],
   name: "Same-Day Track Bias",
   thesis: "Detect inside/outside post bias from earlier races on the same track + surface, then ride horses whose tier matches the bias.",
   evaluate(race) {
