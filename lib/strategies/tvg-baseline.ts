@@ -47,7 +47,7 @@ export const tvgBaselineStrategy: Strategy = {
       type: "WIN",
       evPercent: best.ev,
       truePWin: best.trueP,
-      reason: `TVG model EV +${best.ev.toFixed(1)}% on ${best.runner.name} (model: high, calibrated)`,
+      reason: `TVG model P=${(best.trueP * 100).toFixed(1)}% → EV +${best.ev.toFixed(1)}% on ${best.runner.name} (model: high, calibrated)`,
       confidence: 0.6,
     };
   },
