@@ -225,11 +225,21 @@ function toRace(tr: TvgRace): Race {
   });
 
   const ms = postTime - now;
+  // Phase gate: strategies only evaluate races whose phase is in their
+  // fireAtPhase set. If scheduled post has passed but the race is still IC
+  // (drag in progress — pool open, horses haven't broken), we want strategies
+  // to keep re-evaluating so late-steam opportunities can be caught. Treat
+  // drag as chaos. Only flip to "off" once TVG says the race is actually off
+  // (SK) or past our -60s hard cap (feed hasn't updated — safe to bail).
+  const statusCode = tr.status?.code ?? "";
+  const isBettable = statusCode === "" || statusCode === "IC" || statusCode === "SK" || statusCode === "O";
+  const raceIsOff = statusCode === "SK";
   const phase: Race["phase"] =
     ms > 15 * 60_000 ? "scheduled" :
     ms > 5 * 60_000  ? "discovery" :
     ms > 60_000      ? "action"    :
-    ms > 0           ? "chaos"     : "off";
+    ms > 0           ? "chaos"     :
+    (!raceIsOff && isBettable && ms > -120_000) ? "chaos" : "off";
 
   // Live per-wager minimums straight from the tote feed — authoritative
   // truth for what the track actually accepts. Replaces the static guess in
@@ -252,6 +262,8 @@ function toRace(tr: TvgRace): Race {
     distance: tr.distance ?? "",
     purse: tr.purse ?? undefined,
     conditions: tr.status?.name ?? "",
+    statusCode: tr.status?.code ?? undefined,
+    statusName: tr.status?.name ?? undefined,
     runners,
     winPoolTotal: poolByCode(tr.pools, "WN"),
     placePoolTotal: poolByCode(tr.pools, "PL") || undefined,
@@ -351,22 +363,6 @@ async function fetchTVG(): Promise<Race[]> {
         const code = r.status?.code ?? "";
         return !["RO", "MO", "C", "D"].includes(code);
       });
-
-    // POSTDRAG instrumentation — verify whether TVG's mtp/status.code can
-    // detect actual off vs scheduled post. Logs races in the ±3 min drag
-    // window every fetch (10s cadence). Once we confirm the fields update
-    // during drag, we can use them to push the fire window into real T-15s.
-    for (const r of inWindow) {
-      const schedMs = new Date(r.postTime).getTime() - now;
-      if (schedMs > 3 * 60_000 || schedMs < -3 * 60_000) continue;
-      const trackType = classifyTrack(r.trackCode, r.trackName);
-      const statusName = r.status?.name ?? "?";
-      console.log(
-        `[POSTDRAG] ${r.trackCode} R${r.number} type=${trackType} ` +
-        `schedT${schedMs >= 0 ? "-" : "+"}${Math.abs(Math.round(schedMs / 1000))}s ` +
-        `mtp=${r.mtp} status=${r.status?.code ?? "?"}(${statusName})`,
-      );
-    }
 
     const mapped = inWindow.map(toRace);
     mapped.forEach(r => applyHistory(r, now));

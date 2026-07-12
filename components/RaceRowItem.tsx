@@ -34,7 +34,7 @@ export default function RaceRowItem({ race }: { race: Race }) {
       </div>
       <div className="flex sm:hidden items-center gap-2 justify-end">
         <Countdown postTime={race.postTime} size="md" />
-        <PhaseChip phase={race.phase} />
+        <StatusOrPhaseChip race={race} />
       </div>
       <div className="col-span-2 sm:col-span-1 flex items-center gap-2 text-xs text-ink-1 min-w-0">
         <span
@@ -47,10 +47,38 @@ export default function RaceRowItem({ race }: { race: Race }) {
         <Countdown postTime={race.postTime} size="md" />
       </div>
       <div className="hidden sm:block text-right">
-        <PhaseChip phase={race.phase} />
+        <StatusOrPhaseChip race={race} />
       </div>
     </Link>
   );
+}
+
+// Prefer the live TVG status when the race is at/past scheduled post — that's
+// when the distinction matters. In drag (IC after scheduled post) we want a
+// clear "still bettable" signal so a manual bettor knows they can still get
+// the ticket in. SK means pool is closed. Before scheduled post we fall back
+// to the phase chip since the countdown carries the same information.
+export function StatusOrPhaseChip({ race }: { race: Race }) {
+  const ms = race.postTime - Date.now();
+  const inDrag = ms <= 0 && race.statusCode === "IC";
+  const raceOff = race.statusCode === "SK";
+  if (inDrag) {
+    return (
+      <span
+        className="chip border border-accent-warn/60 bg-accent-warn/15 text-accent-warn animate-pulse"
+        title="Race is dragging — scheduled post passed but pool is still open (TVG status: Up Next)"
+      >DRAG · {Math.floor(-ms / 1000)}s</span>
+    );
+  }
+  if (raceOff) {
+    return (
+      <span
+        className="chip border border-line text-ink-2"
+        title="Race is off — pool closed (TVG status: Race Off)"
+      >OFF</span>
+    );
+  }
+  return <PhaseChip phase={race.phase} />;
 }
 
 export function PhaseChip({ phase }: { phase: Race["phase"] }) {

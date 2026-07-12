@@ -8,7 +8,7 @@ import OverlayHeatmap from "@/components/OverlayHeatmap";
 import FinalFlash from "@/components/FinalFlash";
 import PoolFlow from "@/components/PoolFlow";
 import TicketBuilder from "@/components/TicketBuilder";
-import { PhaseChip } from "@/components/RaceRowItem";
+import { StatusOrPhaseChip } from "@/components/RaceRowItem";
 import { fmtMoney, phaseOf } from "@/lib/format";
 import Link from "next/link";
 import clsx from "clsx";
@@ -81,7 +81,7 @@ export default function RaceRoomPage({ params }: { params: Promise<{ id: string 
             <div className="flex items-center gap-2 sm:gap-3 mb-2 flex-wrap">
               <div className="px-2 sm:px-2.5 py-1 rounded bg-bg-3 font-mono text-xs sm:text-sm">{race.trackCode}</div>
               <h1 className="text-xl sm:text-3xl font-display font-semibold break-words">{race.track} · R{race.raceNumber}</h1>
-              <PhaseChip phase={phase} />
+              <StatusOrPhaseChip race={race} />
               <span className={clsx("chip border", badgeTone)} title={race.trackType ?? "unclassified"}>{badge.label}</span>
               <span className="chip border border-line text-ink-2" title="Field size (non-scratched)">{fieldSize} runners</span>
               <span className="chip border border-line text-ink-2">{race.source}</span>

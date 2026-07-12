@@ -28,10 +28,19 @@ import { strategyAppliesToTrack } from "./track-types";
 
 function phaseOf(race: Race, now: number): Race["phase"] {
   const ms = race.postTime - now;
+  // Extended chaos: while scheduled post has passed but the race is still IC
+  // (drag — pool open, horses haven't left the gate), keep the race in chaos
+  // so strategies keep evaluating. Late-steam opportunities in the drag
+  // window often only appear here; if we call "off" the moment scheduled T
+  // passes, we never see them. Cap at -120s so a race whose feed goes stale
+  // doesn't trap us in permanent chaos.
+  const raceIsOff = race.statusCode === "SK";
+  const isBettableStatus = !race.statusCode || race.statusCode === "IC" || race.statusCode === "O";
   return ms > 15 * 60_000 ? "scheduled"
     : ms > 5 * 60_000     ? "discovery"
     : ms > 60_000         ? "action"
     : ms > 0              ? "chaos"
+    : (!raceIsOff && isBettableStatus && ms > -120_000) ? "chaos"
     : "off";
 }
 

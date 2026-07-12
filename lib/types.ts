@@ -57,6 +57,14 @@ export interface Race {
   takeout: number;          // WIN-pool takeout (e.g. 0.16). Backward-compat alias for poolTakeout.win.
   poolTakeout?: { win: number; place: number; exotic: number };  // per-pool takeout when known
   phase: Phase;
+  // Raw upstream status. TVG returns codes like "IC" ("Up Next" — pool open,
+  // race hasn't gone off) and "SK" ("Race Off" — horses have broken, pool
+  // closed). Populated by adapters that expose it; may be undefined for feeds
+  // that don't. Used by the optimal-timer to fire on actual off instead of
+  // scheduled post — harness "post drag" routinely delays actual off by
+  // 30-90s past scheduled post while status stays IC.
+  statusCode?: string;
+  statusName?: string;
   source: string;           // always "tvg" in production; kept as a string for adapter flexibility
   lastTick: number;
   // How much to trust the EV column. "high" = bet on it, "low" = ignore EV.
