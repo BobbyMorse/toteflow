@@ -17,6 +17,11 @@ export interface StrategyAnalytics {
   hitRate: number | null;
   roi: number | null;
   avgClv: number | null;
+  // Average model EV re-priced at the closing tote — the truthful signal
+  // check. If avgClosingEV stays positive while ROI is deeply negative,
+  // the model's true-P is miscalibrated (not just bad luck / bad CLV).
+  avgClosingEV: number | null;
+  avgCapturedEV: number | null;
   // Statistical confidence
   roiStdErr: number | null;          // Standard error of mean ROI per bet
   roiCI95Low: number | null;         // 95% CI lower bound
@@ -91,6 +96,14 @@ const Q_STRATEGY = db.prepare(`
     AVG(CASE
       WHEN status IN ('won','lost') AND stake > 0 THEN realizedPL / stake
     END)                                                              AS avgRoi,
+    AVG(CASE
+      WHEN status IN ('won','lost') AND closingEV IS NOT NULL
+      THEN closingEV
+    END)                                                              AS avgClosingEV,
+    AVG(CASE
+      WHEN status IN ('won','lost') AND capturedEV IS NOT NULL
+      THEN capturedEV
+    END)                                                              AS avgCapturedEV,
     SUM(CASE
       WHEN status IN ('won','lost') AND stake > 0
       THEN (realizedPL / stake) * (realizedPL / stake)
@@ -135,6 +148,8 @@ export function strategyAnalytics(): StrategyAnalytics[] {
       hitRate: settled > 0 ? (r.won || 0) / settled : null,
       roi: r.staked > 0 ? (r.realizedPL || 0) / r.staked : null,
       avgClv: r.avgClv,
+      avgClosingEV: r.avgClosingEV,
+      avgCapturedEV: r.avgCapturedEV,
       roiStdErr: stdErr,
       roiCI95Low: roiLow,
       roiCI95High: roiHigh,

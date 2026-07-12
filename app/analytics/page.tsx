@@ -17,6 +17,8 @@ interface StrategyAnalytics {
   hitRate: number | null;
   roi: number | null;
   avgClv: number | null;
+  avgClosingEV: number | null;
+  avgCapturedEV: number | null;
   roiCI95Low: number | null;
   roiCI95High: number | null;
   significant: boolean;
@@ -385,6 +387,8 @@ function StrategyCard({ s, kind }: { s: StrategyAnalytics; kind: "working" | "lo
   const roiCls = s.roi == null ? "text-ink-2" : s.roi >= 0 ? "text-accent-overlay" : "text-accent-steam";
   const plCls = s.realizedPL >= 0 ? "text-accent-overlay" : "text-accent-steam";
   const clvCls = s.avgClv == null ? "text-ink-2" : s.avgClv >= 0 ? "text-accent-overlay" : "text-accent-steam";
+  const closeCls = s.avgClosingEV == null ? "text-ink-2" : s.avgClosingEV >= 0 ? "text-accent-overlay" : "text-accent-steam";
+  const capCls = s.avgCapturedEV == null ? "text-ink-2" : s.avgCapturedEV >= 0 ? "text-accent-overlay" : "text-accent-steam";
   const borderCls =
     kind === "working" ? "border-l-2 border-l-accent-overlay/60" :
     kind === "losing"  ? "border-l-2 border-l-accent-steam/60" :
@@ -401,6 +405,22 @@ function StrategyCard({ s, kind }: { s: StrategyAnalytics; kind: "working" | "lo
             <> · CLV <span className={clvCls}>{s.avgClv >= 0 ? "+" : ""}{(s.avgClv * 100).toFixed(1)}%</span></>
           )}
         </div>
+        {/* Signal check: captured EV = what the model said at fire time.
+            Closing EV = same model re-priced at race-off. If closing EV stays
+            positive while ROI is deeply negative, the model's true-P is
+            miscalibrated — not just bad luck. If closing EV collapses vs
+            captured EV, we're getting picked off by late steam. */}
+        {(s.avgCapturedEV != null || s.avgClosingEV != null) && (
+          <div className="text-[10px] sm:text-[11px] text-ink-2 mt-0.5">
+            {s.avgCapturedEV != null && (
+              <>fire EV <span className={capCls}>{s.avgCapturedEV >= 0 ? "+" : ""}{s.avgCapturedEV.toFixed(1)}%</span></>
+            )}
+            {s.avgCapturedEV != null && s.avgClosingEV != null && <> · </>}
+            {s.avgClosingEV != null && (
+              <>close EV <span className={closeCls}>{s.avgClosingEV >= 0 ? "+" : ""}{s.avgClosingEV.toFixed(1)}%</span></>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="text-right">
