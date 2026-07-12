@@ -266,7 +266,7 @@ export interface ConsensusTier {
 }
 
 export interface PairConsensus {
-  strategies: string[];            // e.g. ["overlay-vs-ml","tvg-baseline"]
+  strategies: string[];            // e.g. ["tvg-baseline","track-bias"]
   bets: number;
   settled: number;
   won: number;
@@ -325,7 +325,7 @@ export function consensusTiers(): ConsensusTier[] {
 
 // For each (race, selection) where ≥2 strategies fired, list the unique
 // strategy-set and aggregate the tickets that landed on those exact agreements.
-// Lets you ask "how does [tvg-baseline ∩ overlay-vs-ml] perform specifically?"
+// Lets you ask "how does [tvg-baseline ∩ track-bias] perform specifically?"
 export function pairConsensus(): PairConsensus[] {
   const rows = db.prepare(`
     WITH agreement AS (

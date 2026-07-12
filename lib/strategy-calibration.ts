@@ -10,28 +10,54 @@
 
 // Matches ADAPTER_MODEL_WEIGHT in lib/adapters/tvg.ts for "high" quality races.
 const ADAPTER_MODEL_WEIGHT_HIGH = 0.65;
-// Matches MODEL_WEIGHT in lib/strategies/tvg-baseline.ts.
+// Thoroughbred: 159 bets → -21% ROI at 0.65 raw weight, +12.6% ROI at 0.30
+// re-blend. That's the fit that produced the "working" tvg-baseline.
 const TVG_BASELINE_MODEL_WEIGHT = 0.30;
+// Harness: 68 bets at 0.30 weight → -64.6% ROI. TVG's win-probability model
+// was calibrated on thoroughbred races; harness pools have smaller fields
+// and different price dynamics, so the model is overrating harness picks
+// even after the 0.30 re-blend. Start harness at 0.15 (halving the model
+// weight vs thoroughbred, doubling the pull toward market). Re-audit once
+// we have another 100+ harness bets to see if this needs to go lower or
+// if the strategy has any signal on harness at all.
+const TVG_BASELINE_HARNESS_MODEL_WEIGHT = 0.15;
+// Quarter-horse: sample too small to fit; treat like harness for now
+// (short-field, non-thoroughbred). Same knob — revisit with data.
+const TVG_BASELINE_QH_MODEL_WEIGHT = 0.15;
 
 // Back out the adapter's pre-blend raw model P from its blended trueP, then
 // re-blend at the strategy's more conservative weight. Clamped like the
 // adapter clamps so degenerate inputs land in [0.005, 0.95].
-export function calibrateTVGBaselineTrueP(adapterTrueP: number, marketP: number): number {
+function calibrateWithWeight(adapterTrueP: number, marketP: number, weight: number): number {
   const rawModelP = Math.max(0.005, Math.min(0.95,
     (adapterTrueP - (1 - ADAPTER_MODEL_WEIGHT_HIGH) * marketP) / ADAPTER_MODEL_WEIGHT_HIGH,
   ));
-  return TVG_BASELINE_MODEL_WEIGHT * rawModelP + (1 - TVG_BASELINE_MODEL_WEIGHT) * marketP;
+  return weight * rawModelP + (1 - weight) * marketP;
 }
 
-// Strategy-aware trueP: for tvg-baseline, recalibrate; for anything else,
-// pass the adapter's value through. `marketP` should be the 1/decimalOdds
-// implied probability at the moment of evaluation.
+export function calibrateTVGBaselineTrueP(adapterTrueP: number, marketP: number): number {
+  return calibrateWithWeight(adapterTrueP, marketP, TVG_BASELINE_MODEL_WEIGHT);
+}
+
+export function calibrateTVGBaselineHarnessTrueP(adapterTrueP: number, marketP: number): number {
+  return calibrateWithWeight(adapterTrueP, marketP, TVG_BASELINE_HARNESS_MODEL_WEIGHT);
+}
+
+export function calibrateTVGBaselineQHTrueP(adapterTrueP: number, marketP: number): number {
+  return calibrateWithWeight(adapterTrueP, marketP, TVG_BASELINE_QH_MODEL_WEIGHT);
+}
+
+// Strategy-aware trueP: routes by strategy id. Each tvg-baseline variant
+// gets its own re-blend weight (see constants above). Anything else passes
+// the adapter's value through unchanged.
 export function strategyCalibratedTrueP(
   strategyId: string | null | undefined,
   adapterTrueP: number,
   marketP: number,
 ): number {
   if (strategyId === "tvg-baseline") return calibrateTVGBaselineTrueP(adapterTrueP, marketP);
+  if (strategyId === "tvg-baseline-harness") return calibrateTVGBaselineHarnessTrueP(adapterTrueP, marketP);
+  if (strategyId === "tvg-baseline-qh") return calibrateTVGBaselineQHTrueP(adapterTrueP, marketP);
   return adapterTrueP;
 }
 

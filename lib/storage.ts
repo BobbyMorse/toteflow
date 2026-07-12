@@ -42,15 +42,14 @@ declare global {
 // T-2min are off — they can't be placed manually on FanDuel/DraftKings (no
 // public bet-placement API for retail).
 //
-// On tvg-baseline and overlay-vs-ml: prior assumption was that consumer-facing
-// TVG winProbability gets fully arbitraged by post. Real paper data over
-// 70+ bets shows otherwise — both produce strong +CLV (+24% and +36%), which
-// means the public DOESN'T fully bet the model. Treat as live strategies and
-// let the longer sample confirm or refute.
+// On tvg-baseline: prior assumption was that consumer-facing TVG
+// winProbability gets fully arbitraged by post. Real paper data over
+// hundreds of bets shows otherwise — it produces strong +CLV, which means
+// the public DOESN'T fully bet the model. Kept live; harness variant runs
+// on its own lower model weight (see strategy-calibration.ts).
 const defaultPerStrategy: Record<string, StrategyConfig> = {
   // Enabled — pure-predictive but showing real CLV signal in paper data
   "tvg-baseline":   { enabled: true,  evThreshold: 10, stake: 20, fireAtPhase: "action" },
-  "overlay-vs-ml":  { enabled: true,  evThreshold: 5,  stake: 20, fireAtPhase: "action" },
   // Disabled — never validated, no signal yet
   "lone-speed":     { enabled: false, evThreshold: 5,  stake: 20, fireAtPhase: "action" },
   "always-fav":     { enabled: false, evThreshold: -100, stake: 20, fireAtPhase: "action" },

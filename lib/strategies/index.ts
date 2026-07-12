@@ -1,7 +1,10 @@
 import type { Strategy } from "./types";
-import { tvgBaselineStrategy } from "./tvg-baseline";
+import {
+  tvgBaselineStrategy,
+  tvgBaselineHarnessStrategy,
+  tvgBaselineQHStrategy,
+} from "./tvg-baseline";
 import { favFadeStrategy } from "./fav-fade";
-import { overlayVsMlStrategy } from "./overlay-vs-ml";
 import { loneSpeedStrategy } from "./lone-speed";
 import { passControlStrategy } from "./pass-control";
 import { alwaysFavoriteStrategy } from "./always-favorite";
@@ -14,11 +17,13 @@ import { trifectaKeyStrategy } from "./trifecta-key";
 import { ddConsensusStrategy } from "./dd-consensus";
 import { variantStrategy } from "./variants";
 
-// Base strategies — all currently apply to thoroughbred.
+// Base strategies — all currently apply to thoroughbred. tvg-baseline is
+// excluded from the auto-variant map because its harness/QH versions need
+// different model-blend weights (see lib/strategy-calibration.ts) and are
+// hand-built alongside the thoroughbred version in tvg-baseline.ts.
 const baseStrategies: Strategy[] = [
   tvgBaselineStrategy,
   favFadeStrategy,
-  overlayVsMlStrategy,
   loneSpeedStrategy,
   passControlStrategy,
   alwaysFavoriteStrategy,
@@ -34,15 +39,18 @@ const baseStrategies: Strategy[] = [
 // Per-breed variants: same code, different discipline gate. Each gets its own
 // strategy config so users can toggle/tune per-breed independently and per-breed
 // P&L stays isolated. Config defaults inherit from `defaultConfig()` in storage.
-const harnessVariants = baseStrategies.map(base =>
+const variantable = baseStrategies.filter(s => s.id !== "tvg-baseline");
+const harnessVariants = variantable.map(base =>
   variantStrategy(base, { discipline: "harness", idSuffix: "harness", nameSuffix: "(Harness)" }),
 );
-const quarterHorseVariants = baseStrategies.map(base =>
+const quarterHorseVariants = variantable.map(base =>
   variantStrategy(base, { discipline: "quarter-horse", idSuffix: "qh", nameSuffix: "(QH)" }),
 );
 
 export const strategies: Strategy[] = [
   ...baseStrategies,
+  tvgBaselineHarnessStrategy,
+  tvgBaselineQHStrategy,
   ...harnessVariants,
   ...quarterHorseVariants,
 ];
