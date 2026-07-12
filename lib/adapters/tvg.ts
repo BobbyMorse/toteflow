@@ -339,7 +339,7 @@ async function fetchTVG(): Promise<Race[]> {
     const races: TvgRace[] = json.data?.races ?? [];
     // Use absolute postTime — TVG's `mtp` is a snapshot that never updates.
     // Keep races within the next 90 min, plus ones that just went off (last 3 min).
-    const mapped = races
+    const inWindow = races
       .filter(r => r.bettingInterests && r.bettingInterests.length > 0)
       .filter(r => {
         if (!r.postTime) return false;
@@ -350,8 +350,24 @@ async function fetchTVG(): Promise<Race[]> {
       .filter(r => {
         const code = r.status?.code ?? "";
         return !["RO", "MO", "C", "D"].includes(code);
-      })
-      .map(toRace);
+      });
+
+    // POSTDRAG instrumentation — verify whether TVG's mtp/status.code can
+    // detect actual off vs scheduled post. Logs races in the ±3 min drag
+    // window every fetch (10s cadence). Once we confirm the fields update
+    // during drag, we can use them to push the fire window into real T-15s.
+    for (const r of inWindow) {
+      const schedMs = new Date(r.postTime).getTime() - now;
+      if (schedMs > 3 * 60_000 || schedMs < -3 * 60_000) continue;
+      const trackType = classifyTrack(r.trackName, r.trackCode);
+      console.log(
+        `[POSTDRAG] ${r.trackCode} R${r.number} type=${trackType} ` +
+        `schedT${schedMs >= 0 ? "-" : "+"}${Math.abs(Math.round(schedMs / 1000))}s ` +
+        `mtp=${r.mtp} status=${r.status?.code ?? "?"}`,
+      );
+    }
+
+    const mapped = inWindow.map(toRace);
     mapped.forEach(r => applyHistory(r, now));
     cache = mapped;
     lastFetch = now;
