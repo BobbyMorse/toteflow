@@ -23,18 +23,22 @@ interface DecideInput {
   msToPost: number;
 }
 
-// Firing window tuned for manual placement on FanDuel/DraftKings — neither
-// platform exposes a programmatic bet-placement API to retail, so signals
-// have to surface with enough lead time for the user to navigate the ADW
-// UI and submit the bet before pool close. The window is T-2min to T-4min:
-//   - MIN_HOLD_MS = 240s: don't fire before T-4min (pool still settling)
-//   - HARD_FIRE_MS = 120s: at T-2min, force-fire any still-waiting signal
-//                          — beyond this, user can't realistically place
-// Inside the window, fire as soon as the model EV is above the collapse
-// floor. Past T-2min, staged tickets that never cleared get LOCKED for a
-// last-chance fire.
-const HARD_FIRE_MS = 120_000;       // T-2min: force-fire; beyond this is unplayable
-const MIN_HOLD_MS = 240_000;        // T-4min: before this, pool is too noisy to trust
+// Firing window is deliberately tight and close to post because this is
+// paper-only — no manual FanDuel/DraftKings placement lead time to reserve.
+// Pushing the window to the very end of the pool cycle filters out signals
+// whose EV collapses as sharp money hits: a "+36% EV at T-2min" bet whose
+// odds tighten to near-market by T-30s reads as a nothing-burger and gets
+// aborted before it ever fires. The window is T-30s to T-15s:
+//   - MIN_HOLD_MS = 30s: don't fire before T-30s (odds still settling; also
+//                        the pool at T-2min looks nothing like the closing
+//                        pool for many races)
+//   - HARD_FIRE_MS = 15s: at T-15s, force-fire any still-waiting signal
+// Inside the window, fire as soon as the live model EV is above the
+// collapse floor. Past T-15s, staged tickets that never cleared get LOCKED
+// for a last-chance fire. Autobook ticks every 2s in chaos phase, so the
+// window still gives us ~7 promotion passes.
+const HARD_FIRE_MS = 15_000;        // T-15s: force-fire; beyond this the pool is closing
+const MIN_HOLD_MS = 30_000;         // T-30s: earliest fire — before this, odds still moving
 const EV_COLLAPSE_FLOOR_PCT = -5;   // soft floor: tolerate modest decay, kill outright collapses
 
 function fmtMs(ms: number): string {

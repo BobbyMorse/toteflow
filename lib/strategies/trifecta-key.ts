@@ -14,7 +14,7 @@ import type { Race } from "../types";
 //   - 6-combo box × $0.50 base = $3 ticket at most tracks. Fires only when
 //     trifecta pool is meaningful enough that the payout estimate is sane.
 
-const MIN_SECONDS_TO_POST = 90;
+const MIN_SECONDS_TO_POST = 15;
 const MIN_FIELD = 7;
 const MIN_TRIFECTA_POOL = 3_000;
 const MIN_TOP3_COMBINED_TRUEP = 0.65;

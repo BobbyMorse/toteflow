@@ -21,7 +21,7 @@ import type { Race, Runner } from "../types";
 // Pick the highest-EV runner. Fire if the edge clears the strategy threshold
 // (default 3%, configurable via the AutoBook UI).
 
-const MIN_SECONDS_TO_POST = 90;
+const MIN_SECONDS_TO_POST = 15;
 const MIN_FIELD = 5;
 const MIN_PLACE_POOL = 5_000;          // need real liquidity for breakage math
 // PLACE pool takeout: prefer the adapter's per-track value

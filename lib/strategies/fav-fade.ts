@@ -8,7 +8,7 @@ const FALLBACK_TAKEOUT = 0.16;  // US WIN average; only used if race.takeout mis
 // Documented edge from historical studies: heavy favs in fields ≥8 are
 // overbet by roughly 3-5 percentage points of implied win probability.
 const FAV_OVERBET_BIAS = 0.04;
-const MIN_SECONDS_TO_POST = 90;
+const MIN_SECONDS_TO_POST = 15;
 
 export const favFadeStrategy: Strategy = {
   id: "fav-fade",

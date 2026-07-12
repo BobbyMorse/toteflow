@@ -7,7 +7,7 @@ import {
   evPercentFromTrueP,
 } from "../strategy-calibration";
 
-const MIN_SECONDS_TO_POST = 90;
+const MIN_SECONDS_TO_POST = 15;
 const FALLBACK_TAKEOUT = 0.16;
 
 // Empirical calibration. The TVG adapter's trueP blend gives the model 65%

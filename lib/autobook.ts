@@ -311,7 +311,7 @@ class Engine {
         this.note(
           `[${t.strategyId ?? "?"}] ${isShadow ? "SHADOW " : ""}FIRE ${t.raceId} ${t.type} #${t.selections.join("-")} ` +
           `key @ ${runner.fractionalOdds} · stake $${liveStake.toFixed(2)} · est payout $${t.potentialPayout.toFixed(0)} ` +
-          `(${decision.status === "LOCKED" ? "T-30s lock" : "EV peaked"})`,
+          `(${decision.status === "LOCKED" ? "T-15s lock" : "EV peaked"})`,
         );
         continue;
       }
@@ -334,7 +334,7 @@ class Engine {
       this.note(
         `[${t.strategyId ?? "?"}] ${isShadow ? "SHADOW " : ""}FIRE ${t.raceId} #${selection} ` +
         `@ ${runner.fractionalOdds} live EV ${liveEv >= 0 ? "+" : ""}${liveEv.toFixed(1)}% ` +
-        `(${decision.status === "LOCKED" ? "T-30s lock" : "EV peaked"})`,
+        `(${decision.status === "LOCKED" ? "T-15s lock" : "EV peaked"})`,
       );
     }
     return { promoted, aborted };

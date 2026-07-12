@@ -13,7 +13,7 @@ import type { Race } from "../types";
 //     grader uses it to compute paper P/L on a hit. Paper-precise, not
 //     bookable-precise.
 
-const MIN_SECONDS_TO_POST = 90;
+const MIN_SECONDS_TO_POST = 15;
 const MIN_FIELD = 6;
 const MIN_EXACTA_POOL = 3_000;
 const MIN_COMBINED_TRUEP = 0.55;   // top-2 must dominate the field

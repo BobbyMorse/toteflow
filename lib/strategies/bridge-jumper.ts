@@ -19,7 +19,7 @@ import type { Race, Runner } from "../types";
 //
 // Bets SHOW on the highest-EV non-target runner.
 
-const MIN_SECONDS_TO_POST = 90;
+const MIN_SECONDS_TO_POST = 15;
 const MIN_FIELD = 7;
 const MIN_SHOW_POOL = 10_000;
 // SHOW pool takeout: prefer the adapter's per-track value

@@ -22,7 +22,7 @@ import { RaceResults } from "../race-results";
 
 const MIN_SAMPLE_RACES = 5;
 const MIN_TIER_SHARE = 0.60;        // ≥60% of winners in one tier to declare bias
-const MIN_SECONDS_TO_POST = 60;
+const MIN_SECONDS_TO_POST = 15;
 const MAX_SECONDS_TO_POST = 600;    // up to 10 min before post
 const MIN_FIELD = 5;
 const MAX_LIVE_ODDS = 30;
