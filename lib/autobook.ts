@@ -681,6 +681,7 @@ class Engine {
           capturedEVRaw: runner.evPercentRaw,
           capturedTrueP: refreshTrueP,
           capturedOdds: runner.currentOdds,
+          reason: evaluation.reason,
         });
         return "refreshed";
       }
