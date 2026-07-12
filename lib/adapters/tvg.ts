@@ -359,11 +359,12 @@ async function fetchTVG(): Promise<Race[]> {
     for (const r of inWindow) {
       const schedMs = new Date(r.postTime).getTime() - now;
       if (schedMs > 3 * 60_000 || schedMs < -3 * 60_000) continue;
-      const trackType = classifyTrack(r.trackName, r.trackCode);
+      const trackType = classifyTrack(r.trackCode, r.trackName);
+      const statusName = r.status?.name ?? "?";
       console.log(
         `[POSTDRAG] ${r.trackCode} R${r.number} type=${trackType} ` +
         `schedT${schedMs >= 0 ? "-" : "+"}${Math.abs(Math.round(schedMs / 1000))}s ` +
-        `mtp=${r.mtp} status=${r.status?.code ?? "?"}`,
+        `mtp=${r.mtp} status=${r.status?.code ?? "?"}(${statusName})`,
       );
     }
 
