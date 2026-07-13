@@ -58,23 +58,19 @@ function build(id: string, name: string, appliesTo: Discipline[], calibrate: Tru
       // CRITICAL VALIDATION: ensure returned P and EV are mathematically consistent.
       // If they diverge, recalculate EV from P to prevent storing impossible pairs
       // like "19.7% → +17.6% @ 3/1 odds" (which is mathematically impossible).
-      const recomputedEV = evPercentFromTrueP(best.trueP, best.runner.currentOdds, takeout);
-      const evDivergence = Math.abs(recomputedEV - best.ev);
+      // CRITICAL: Always recalculate EV from P using the exact formula. This ensures
+      // we never store P/EV pairs that don't match mathematically. The formula is
+      // deterministic and correct; if the calculated EV diverges, use the formula's result.
+      const formulaEV = evPercentFromTrueP(best.trueP, best.runner.currentOdds, takeout);
+      const evDivergence = Math.abs(formulaEV - best.ev);
+      let finalEV = formulaEV;  // Always use formula as source of truth
 
-      // DEBUG: log all bets to understand the mismatch
-      if (evDivergence > 2.0) {
-        console.error(
-          `[${this.id}] CRITICAL EV MISMATCH on ${best.runner.name}:\n` +
-          `  Returned: P=${(best.trueP * 100).toFixed(1)}% EV=${best.ev.toFixed(1)}%\n` +
-          `  Recomputed: ${recomputedEV.toFixed(1)}% (divergence: ${evDivergence.toFixed(1)}pp)\n` +
-          `  Odds=${best.runner.currentOdds.toFixed(2)}x takeout=${(takeout * 100).toFixed(0)}%`
+      if (evDivergence > 0.5) {
+        console.warn(
+          `[${this.id}] EV correction on ${best.runner.name}: ` +
+          `P=${(best.trueP * 100).toFixed(1)}% @ ${best.runner.currentOdds.toFixed(2)}x gave ` +
+          `${best.ev.toFixed(1)}%, corrected to ${finalEV.toFixed(1)}% (diff: ${evDivergence.toFixed(1)}pp)`
         );
-      }
-
-      let finalEV = best.ev;
-      if (evDivergence > 2.0) {
-        // EV diverges by more than 2pp — recalculate it from the P to ensure consistency.
-        finalEV = recomputedEV;
       }
 
       return {

@@ -26,13 +26,18 @@ const TVG_BASELINE_HARNESS_MODEL_WEIGHT = 0.15;
 const TVG_BASELINE_QH_MODEL_WEIGHT = 0.15;
 
 // Back out the adapter's pre-blend raw model P from its blended trueP, then
-// re-blend at the strategy's more conservative weight. Clamped like the
-// adapter clamps so degenerate inputs land in [0.005, 0.95].
+// re-blend at the strategy's more conservative weight.
+//
+// CRITICAL NOTE: The adapter's rawP from TVG is normalized across the field
+// (divided by pSum) before blending. So adapterTrueP is actually a blend of
+// the NORMALIZED model. When we back out rawModelP, we get the normalized
+// value, not the original. This is correct - we're peeling back one layer at
+// a time (blend → normalized). Clamped so degenerate inputs land in [0.005, 0.95].
 function calibrateWithWeight(adapterTrueP: number, marketP: number, weight: number): number {
-  const rawModelP = Math.max(0.005, Math.min(0.95,
+  const normalizedModelP = Math.max(0.005, Math.min(0.95,
     (adapterTrueP - (1 - ADAPTER_MODEL_WEIGHT_HIGH) * marketP) / ADAPTER_MODEL_WEIGHT_HIGH,
   ));
-  return weight * rawModelP + (1 - weight) * marketP;
+  return weight * normalizedModelP + (1 - weight) * marketP;
 }
 
 export function calibrateTVGBaselineTrueP(adapterTrueP: number, marketP: number): number {
