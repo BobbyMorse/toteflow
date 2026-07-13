@@ -207,20 +207,6 @@ class Engine {
       const runner = race?.runners.find(r => r.program === selection) ?? null;
       const msToPost = (t.postTime ?? race?.postTime ?? 0) - now;
 
-      // Post passed without the timer ever giving us a fire signal — log as
-      // missed window. This is a strategy quality signal: too tight or too
-      // early to ever clear the optimal-timer.
-      if (msToPost <= 0) {
-        Tickets.update(t.id, {
-          status: "aborted",
-          abortedAt: now,
-          abortReason: "missed window — post passed before fire signal",
-        });
-        aborted++;
-        this.note(`[${t.strategyId ?? "?"}] ABORT ${t.raceId} #${selection} · missed window`);
-        continue;
-      }
-
       // Race feed dropped or runner scratched — abort. We can't honestly
       // simulate placing a bet we wouldn't have live odds for.
       if (!race || !runner || runner.scratched) {
@@ -237,12 +223,11 @@ class Engine {
       // In-race exotic wagers (EXACTA/TRIFECTA) skip the EV-based abort. Their
       // edge thesis is measured against the exotic pool, not the key horse's
       // WIN-pool EV, so a drift in the key horse's WIN EV isn't a reason to
-      // cancel an exacta. We still use the timer to pick a fire moment, but
-      // ABORT decisions only fire on hard errors (window passed, scratch),
-      // which are handled above.
+      // cancel an exacta. MISSED (SK or stale feed) still applies to exotics
+      // — that's the window genuinely closing, not an EV signal.
       const isExoticInRace = t.type === "EXACTA" || t.type === "TRIFECTA";
       const decision = decideBetWindow({ race, runner, msToPost });
-      if (decision.status === "ABORT" && !isExoticInRace) {
+      if (decision.status === "MISSED" || (decision.status === "ABORT" && !isExoticInRace)) {
         Tickets.update(t.id, {
           status: "aborted",
           abortedAt: now,
