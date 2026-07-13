@@ -363,12 +363,6 @@ function OpenBetCard({ group: g }: { group: OpenBetGroup }) {
       ? `OFF (${s}s ago)`
       : `Post in ${m}:${String(s).padStart(2,"0")}`;
 
-  // Optimal-timer is single-runner logic — exotic wagers (multi-leg DD/Pick-N
-  // and multi-pick EXACTA/TRIFECTA) don't have a meaningful single-runner
-  // fire window to manage. Bypass it.
-  const decision = exotic
-    ? null
-    : decideBetWindow({ race: liveRace ?? null, runner: liveRunner, msToPost });
   const liveOdds = liveRunner?.currentOdds ?? null;
   // Odds drift since the bot fired — positive means odds tightened (less value).
   // Skip when fully staged: the recorded odds are from strategy-match time, not
@@ -397,6 +391,14 @@ function OpenBetCard({ group: g }: { group: OpenBetGroup }) {
   const liveEv = liveTrueP != null && liveOdds != null && liveTakeout != null
     ? evPercentFromTrueP(liveTrueP, liveOdds, liveTakeout)
     : liveRunner?.evPercent ?? null;
+
+  // Optimal-timer is single-runner logic — exotic wagers (multi-leg DD/Pick-N
+  // and multi-pick EXACTA/TRIFECTA) don't have a meaningful single-runner
+  // fire window to manage. Bypass it. Pass calibrated EV so the EV floor check
+  // uses the same probability the strategy gates on, not the uncalibrated adapter blend.
+  const decision = exotic
+    ? null
+    : decideBetWindow({ race: liveRace ?? null, runner: liveRunner, msToPost, calibratedEv: liveEv ?? undefined });
   const modelOn = isModelContributing(liveTrueP, liveOdds);
   const fairDecimal = modelOn ? modelFairDecimal(liveTrueP, liveTakeout) : null;
   // Overpricing % = (market − fair) / fair. Positive = market is longer
@@ -624,6 +626,22 @@ function OpenBetCard({ group: g }: { group: OpenBetGroup }) {
                     {" "}({liveEv > avgEv ? "+" : ""}{(liveEv - avgEv).toFixed(1)}pp)
                   </span>
                 )}
+              </div>
+            )}
+            {!allStaged && expired && liveEv == null && (
+              <div>
+                <span className="text-ink-2">captured EV: </span>
+                <span className={clsx(
+                  avgEv < -5 ? "text-accent-steam font-semibold" :
+                  avgEv < 0 ? "text-accent-warn" :
+                  "text-accent-overlay"
+                )}>
+                  {avgEv >= 0 ? "+" : ""}{avgEv.toFixed(1)}%
+                </span>
+                <EVExplainer
+                  context="history"
+                  capturedEv={avgEv}
+                />
               </div>
             )}
             {allStaged && liveOdds != null && (liveTrueP != null || fairDecimal != null) && (

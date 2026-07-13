@@ -21,6 +21,7 @@ interface DecideInput {
   race: Race | null;
   runner: Runner | null;
   msToPost: number;
+  calibratedEv?: number;  // optional strategy-calibrated EV for the collapse floor check
 }
 
 // Fire window: paper-only, so no manual placement lead time to reserve. The
@@ -54,7 +55,7 @@ function fmtMs(ms: number): string {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
-export function decideBetWindow({ race, runner, msToPost }: DecideInput): BetWindowDecision {
+export function decideBetWindow({ race, runner, msToPost, calibratedEv }: DecideInput): BetWindowDecision {
   if (!race || !runner) {
     return {
       status: "STALE",
@@ -104,13 +105,15 @@ export function decideBetWindow({ race, runner, msToPost }: DecideInput): BetWin
   // EV is the truthful signal (T-30s scheduled through the drag window). This
   // is what catches the 19/1→2/1 harness late-steam collapses — the pool
   // moves through drag re-price the horse and EV crashes past the floor
-  // before we ever fire.
-  if (msToPost <= MIN_HOLD_MS && currentEv < EV_COLLAPSE_FLOOR_PCT) {
+  // before we ever fire. Uses calibrated EV if available (what the strategy
+  // actually gates on), falls back to raw adapter EV.
+  const evForFloorCheck = calibratedEv ?? currentEv;
+  if (msToPost <= MIN_HOLD_MS && evForFloorCheck < EV_COLLAPSE_FLOOR_PCT) {
     const window = msToPost > 0 ? fmtMs(msToPost) : `${Math.floor(-msToPost / 1000)}s into drag`;
     return {
       status: "ABORT",
       headline: "PASS — EV collapsed",
-      detail: `EV ${currentEv.toFixed(1)}% at ${window} · below ${EV_COLLAPSE_FLOOR_PCT}% floor, model edge gone`,
+      detail: `EV ${evForFloorCheck.toFixed(1)}% at ${window} · below ${EV_COLLAPSE_FLOOR_PCT}% floor, model edge gone`,
       currentOdds,
       currentEv,
       evSlopePctPerMin: null,
