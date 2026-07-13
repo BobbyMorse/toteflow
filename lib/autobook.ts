@@ -321,6 +321,22 @@ class Engine {
       const baseStake = cfg?.stake ?? t.stake ?? 0;
       const liveStake = isShadow ? 0 : baseStake;
 
+      // Hard floor: don't fire single-runner bets with negative EV at fire time.
+      // This catches cases where odds drifted enough to flip EV negative between
+      // match time and fire. Pick-N exotics (tracked separately above) skip this check
+      // since their EV is computed at book time against exotic-pool assumptions.
+      const EV_FIRE_FLOOR = 0;
+      if (liveEv < EV_FIRE_FLOOR) {
+        Tickets.update(t.id, {
+          status: "aborted",
+          abortedAt: now,
+          abortReason: `negative EV at fire (${liveEv.toFixed(1)}% < ${EV_FIRE_FLOOR}%)`,
+        });
+        aborted++;
+        this.note(`[${t.strategyId ?? "?"}] ABORT ${t.raceId} #${selection} · EV collapsed to ${liveEv.toFixed(1)}% at fire time`);
+        continue;
+      }
+
       // Validate that capturedTrueP and liveEv are mathematically consistent.
       // If they diverge significantly, prefer recalculating from the strategy's
       // calibrated values to avoid storing mismatched pairs.

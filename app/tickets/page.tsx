@@ -1173,6 +1173,9 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
         {t.reason && (
           <div className="text-[11px] text-ink-2 italic">
             {t.reason}
+            {t.capturedEV < 0 && (
+              <div className="text-accent-steam mt-1">⚠ Fired with negative EV ({t.capturedEV.toFixed(1)}%)</div>
+            )}
             {evMismatchWarning && (
               <div className="text-accent-steam mt-1">⚠ {evMismatchWarning}</div>
             )}
@@ -1282,9 +1285,12 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
           )}
         </span>
       </div>
-      {t.reason && (
-        <div className="hidden sm:block mt-0.5 sm:ml-[250px] text-[11px] text-ink-2 italic truncate">
+      {(t.reason || t.capturedEV < 0) && (
+        <div className="hidden sm:block mt-0.5 sm:ml-[250px] text-[11px] text-ink-2 italic">
           {t.reason}
+          {t.capturedEV < 0 && (
+            <div className="text-accent-steam mt-0.5">⚠ Fired with negative EV ({t.capturedEV.toFixed(1)}%)</div>
+          )}
         </div>
       )}
       {settled && finishOrder.length > 0 && (

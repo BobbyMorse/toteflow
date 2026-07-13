@@ -55,7 +55,7 @@ const defaultPerStrategy: Record<string, StrategyConfig> = {
   "always-fav":     { enabled: false, evThreshold: -100, stake: 20, fireAtPhase: "action" },
   // Enabled — structural edge, math-based, manually playable
   "fav-fade":       { enabled: true,  evThreshold: 3,  stake: 20, fireAtPhase: "action" },
-  "pass-control":   { enabled: true,  evThreshold: 0,  stake: 20, fireAtPhase: "action" },
+  "pass-control":   { enabled: true,  evThreshold: 1,  stake: 20, fireAtPhase: "action" },
   "dr-z-place":     { enabled: true,  evThreshold: 3,  stake: 20, fireAtPhase: "action" },
   "bridge-jumper":  { enabled: true,  evThreshold: 2,  stake: 20, fireAtPhase: "action" },
   // Carryover Pick-N: stake = desired base ticket cost per combo; the booker
@@ -64,8 +64,9 @@ const defaultPerStrategy: Record<string, StrategyConfig> = {
   // (e.g. 30 = "only fire when ~+30% edge or better").
   "carryover-pickn":{ enabled: true,  evThreshold: 30, stake: 0.5, fireAtPhase: "action" },
   // Track bias: live EV can be slightly negative if the bias signal is strong
-  // (strategy enforces its own -2% floor internally), so threshold stays low.
-  "track-bias":     { enabled: true,  evThreshold: 0,  stake: 20, fireAtPhase: "action" },
+  // (strategy enforces its own -2% floor internally), raised threshold to 2% to
+  // prevent match-time EV flips that slip below zero at fire time.
+  "track-bias":     { enabled: true,  evThreshold: 2,  stake: 20, fireAtPhase: "action" },
   // Exotic wagers — `stake` is the per-combo base; the booker multiplies it by
   // combo count (2 for exacta box, 6 for trifecta box, 1 for single-combo DD).
   // Conservative thresholds because exotic payout math is estimated from pool
