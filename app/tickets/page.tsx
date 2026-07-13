@@ -599,28 +599,88 @@ function OpenBetCard({ group: g }: { group: OpenBetGroup }) {
             )}
           </>
         )}
-        {!exotic && !allStaged && liveEv != null && (
-          <div className="text-[11px] font-mono">
-            <span className="text-ink-2">live EV: </span>
-            <span className={clsx(
-              liveEv < -5 ? "text-accent-steam font-semibold" :
-              liveEv < 0 ? "text-accent-warn" :
-              "text-accent-overlay"
-            )}>
-              {liveEv >= 0 ? "+" : ""}{liveEv.toFixed(1)}%
-            </span>
-            <EVExplainer
-              context="live"
-              trueP={liveTrueP}
-              odds={liveOdds}
-              takeout={liveRace?.takeout ?? null}
-              liveEv={liveEv}
-            />
-            {Math.abs(liveEv - avgEv) >= 1 && (
-              <span className="text-ink-2 ml-2">
-                {liveEv > avgEv ? "▲" : "▼"} from {avgEv >= 0 ? "+" : ""}{avgEv.toFixed(1)}% at fire
-                {" "}({liveEv > avgEv ? "+" : ""}{(liveEv - avgEv).toFixed(1)}pp)
-              </span>
+        {!exotic && (
+          <div className="text-[11px] font-mono space-y-0.5">
+            {!allStaged && liveEv != null && (
+              <div>
+                <span className="text-ink-2">live EV: </span>
+                <span className={clsx(
+                  liveEv < -5 ? "text-accent-steam font-semibold" :
+                  liveEv < 0 ? "text-accent-warn" :
+                  "text-accent-overlay"
+                )}>
+                  {liveEv >= 0 ? "+" : ""}{liveEv.toFixed(1)}%
+                </span>
+                <EVExplainer
+                  context="live"
+                  trueP={liveTrueP}
+                  odds={liveOdds}
+                  takeout={liveRace?.takeout ?? null}
+                  liveEv={liveEv}
+                />
+                {Math.abs(liveEv - avgEv) >= 1 && (
+                  <span className="text-ink-2 ml-2">
+                    {liveEv > avgEv ? "▲" : "▼"} from {avgEv >= 0 ? "+" : ""}{avgEv.toFixed(1)}% at fire
+                    {" "}({liveEv > avgEv ? "+" : ""}{(liveEv - avgEv).toFixed(1)}pp)
+                  </span>
+                )}
+              </div>
+            )}
+            {allStaged && liveOdds != null && (liveTrueP != null || fairDecimal != null) && (
+              <div className="space-y-0.5">
+                <div className="text-ink-2">
+                  model view (right now):
+                </div>
+                {liveTrueP != null && (
+                  <div>
+                    <span className="text-ink-2">P win: </span>
+                    <span className="text-ink-0">{(liveTrueP * 100).toFixed(1)}%</span>
+                  </div>
+                )}
+                <div>
+                  <span className="text-ink-2">live: </span>
+                  <span className="text-ink-0">{decimalToFractional(liveOdds)}</span>
+                  <span className="text-ink-2 ml-1">({liveOdds.toFixed(2)})</span>
+                </div>
+                {fairDecimal != null && (
+                  <div>
+                    <span className="text-ink-2">fair: </span>
+                    <span className="text-ink-0">{decimalToFractional(fairDecimal)}</span>
+                    <span className="text-ink-2 ml-1">({fairDecimal.toFixed(2)})</span>
+                    {marketVsFairPct != null && Math.abs(marketVsFairPct) >= 1 && (
+                      <span className={clsx("ml-2",
+                        marketVsFairPct > 0 ? "text-accent-overlay" : "text-accent-steam"
+                      )}>
+                        {marketVsFairPct > 0 ? "↑ underpriced" : "↓ overpriced"} {Math.abs(marketVsFairPct).toFixed(0)}%
+                      </span>
+                    )}
+                  </div>
+                )}
+                {liveEv != null && (
+                  <div>
+                    <span className="text-ink-2">model EV now: </span>
+                    <span className={clsx(
+                      liveEv < -5 ? "text-accent-steam font-semibold" :
+                      liveEv < 0 ? "text-accent-warn" :
+                      "text-accent-overlay"
+                    )}>
+                      {liveEv >= 0 ? "+" : ""}{liveEv.toFixed(1)}%
+                    </span>
+                    {Math.abs(liveEv - avgEv) >= 0.5 && (
+                      <span className="text-ink-2 ml-2">
+                        {liveEv > avgEv ? "▲" : "▼"} from {avgEv >= 0 ? "+" : ""}{avgEv.toFixed(1)}% at match
+                      </span>
+                    )}
+                    <EVExplainer
+                      context="live"
+                      trueP={liveTrueP}
+                      odds={liveOdds}
+                      takeout={liveRace?.takeout ?? null}
+                      liveEv={liveEv}
+                    />
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
