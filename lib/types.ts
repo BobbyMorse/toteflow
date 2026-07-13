@@ -134,6 +134,11 @@ export interface Ticket {
   // the type so old rows still deserialize.
   capturedEVRaw?: number;
   closingEVRaw?: number;
+  // How a winning payout was determined at settle. "tote" = actual pool payoff
+  // from the results feed (trustworthy P/L). "estimated" = the strategy's own
+  // book-time payout estimate (directional only — races whose payoff feed was
+  // empty, or tickets settled before real-payoff grading landed).
+  payoutSource?: "tote" | "estimated";
   // True when another AUTO ticket already covered this (raceId, type, selections).
   // Shadow tickets keep full strategy attribution but carry stake/payout/P&L = 0
   // so we don't double-debit the bankroll when two strategies agree.

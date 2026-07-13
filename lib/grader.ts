@@ -15,9 +15,16 @@ const RESULTS_QUERY = `{
     status { code name }
     results {
       runners { biNumber finishPosition winPayoff placePayoff showPayoff betAmount finishStatus }
+      payoffs { wagerAmount wagerType { code } selections { selection payoutAmount } }
     }
   }
 }`;
+
+interface TvgPayoff {
+  wagerAmount: number | null;
+  wagerType: { code: string } | null;
+  selections: Array<{ selection: string | null; payoutAmount: number | null }> | null;
+}
 
 interface TvgResults {
   id: string;
@@ -32,6 +39,7 @@ interface TvgResults {
       winPayoff: number | null; placePayoff: number | null; showPayoff: number | null;
       betAmount: number | null; finishStatus: string | null;
     }> | null;
+    payoffs: TvgPayoff[] | null;
   } | null;
 }
 
@@ -45,6 +53,59 @@ const PICKN_TYPES = new Set<Ticket["type"]>(["DD", "P3", "P4", "P5", "P6", "J6"]
 const EXOTIC_IN_RACE_TYPES = new Set<Ticket["type"]>(["EXACTA", "TRIFECTA"]);
 
 type TvgResultRunner = NonNullable<NonNullable<TvgResults["results"]>["runners"]>[number];
+
+// Ticket type → TVG payoff wagerType code. Multi-race payoffs (DB/P3/…)
+// post on the LAST leg's race results (verified empirically: 79/83 DD
+// payoffs match the posting race's winner as the second leg).
+const PAYOFF_CODE: Partial<Record<Ticket["type"], string>> = {
+  EXACTA: "EX", TRIFECTA: "TR", DD: "DB",
+  P3: "P3", P4: "P4", P5: "P5", P6: "P6",
+};
+
+// Parse a payoff selection string into per-position program numbers.
+// Plain form: "5-2-3". Pick-N full/consolation form: "4 OF  4 1-8-3-6" —
+// only full hits (N OF N) count here; consolations return null.
+function parsePayoffCombo(sel: string | null): string[] | null {
+  if (!sel) return null;
+  const m = sel.match(/^(\d+)\s+OF\s+(\d+)\s+(.*)$/i);
+  if (m) {
+    if (m[1] !== m[2]) return null;   // consolation payoff (e.g. 5 OF 6)
+    return m[3].trim().split("-").map(s => s.trim());
+  }
+  return sel.trim().split("-").map(s => s.trim());
+}
+
+// Sum the real tote payout for the combos our ticket covers. `covers` decides
+// whether a winning combo belongs to the ticket (box membership for in-race
+// exotics, per-leg membership for multi-race). `perComboStake` is the ticket
+// stake divided by covered combos — TVG payoffs are per `wagerAmount` (usually
+// $1), so scale to what we actually had riding on the winning combo. Returns
+// null when the race exposes no payoff for this wager type (fall back to the
+// book-time estimate). Dead heats produce multiple selection entries; we sum
+// every one the ticket covers.
+function realPayout(
+  race: TvgResults,
+  code: string,
+  perComboStake: number,
+  covers: (combo: string[]) => boolean,
+): number | null {
+  const payoffs = race.results?.payoffs ?? [];
+  let found = false;
+  let total = 0;
+  for (const p of payoffs) {
+    if (p.wagerType?.code !== code) continue;
+    const base = p.wagerAmount ?? 0;
+    if (base <= 0) continue;
+    for (const s of p.selections ?? []) {
+      const combo = parsePayoffCombo(s.selection);
+      if (!combo) continue;
+      found = true;
+      if (s.payoutAmount == null || !covers(combo)) continue;
+      total += (perComboStake / base) * s.payoutAmount;
+    }
+  }
+  return found ? total : null;
+}
 
 // Any open ticket more than this many ms past its postTime gets voided by the
 // janitor pass. Bounds the live-opportunities panel and recovers the staked
@@ -63,7 +124,7 @@ function isScratched(rn: TvgResultRunner | undefined): boolean {
 class Grader {
   // Marker bumped whenever settle logic adds new ticket types — read by the
   // HMR staleness check below so dev reloads pick up the new settle paths.
-  readonly version = 4;
+  readonly version = 5;
   started = false;
   lastTick = 0;
   inFlight: Promise<void> | null = null;
@@ -163,7 +224,7 @@ class Grader {
           unsettledStatuses += ` ${t.raceId}=${status}(no_finish)`;
           continue;
         }
-        this.settle(t, runners);
+        this.settle(t, r, runners);
       }
       if (unsettledStatuses) {
         this.note(`check ${open.length} open:${unsettledStatuses}`);
@@ -206,7 +267,7 @@ class Grader {
     }
   }
 
-  private settle(ticket: Ticket, runners: TvgResultRunner[]) {
+  private settle(ticket: Ticket, race: TvgResults, runners: TvgResultRunner[]) {
     const t = Tickets.byId(ticket.id);
     if (!t || t.status !== "open") return;
     const selected = t.selections[0];
@@ -242,11 +303,13 @@ class Grader {
     }
 
     let won = false, payout = 0;
+    let payoutSource: Ticket["payoutSource"];
     if (t.type === "WIN") {
       if (myFinish?.finishPosition === 1 && myFinish.winPayoff && myFinish.betAmount) {
         won = true;
         // TVG payoff is per `betAmount` (usually $2). Scale to our stake.
         payout = (t.stake / myFinish.betAmount) * myFinish.winPayoff;
+        payoutSource = "tote";
       }
     } else if (t.type === "PLACE") {
       // Place pays if horse finishes 1st OR 2nd.
@@ -254,6 +317,7 @@ class Grader {
           && myFinish.placePayoff && myFinish.betAmount) {
         won = true;
         payout = (t.stake / myFinish.betAmount) * myFinish.placePayoff;
+        payoutSource = "tote";
       }
     } else if (t.type === "SHOW") {
       // Show pays if horse finishes 1st, 2nd, OR 3rd.
@@ -261,21 +325,35 @@ class Grader {
           && myFinish.showPayoff && myFinish.betAmount) {
         won = true;
         payout = (t.stake / myFinish.betAmount) * myFinish.showPayoff;
+        payoutSource = "tote";
       }
     } else if (t.type === "EXACTA" || t.type === "TRIFECTA") {
       // Box settlement. Hit = top-N actual finishers are all members of our
-      // selections set, in any order. Payout from TVG's per-runner results
-      // feed isn't available for exotic pools (only WIN/PLACE/SHOW payoffs
-      // are exposed), so we fall back to the estimatedPayout captured at book
-      // time. Same caveat as Pick-N: paper P/L is directional, not bookable-
-      // precise.
+      // selections set, in any order. Payout comes from the race's real tote
+      // payoff (results.payoffs) scaled to our per-combo stake; if the feed
+      // doesn't expose one, fall back to the book-time estimate and mark the
+      // ticket payoutSource = "estimated" so analytics can quarantine it.
       const need = t.type === "EXACTA" ? 2 : 3;
       const top = finishOrder.slice(0, need);
       const coveredSet = new Set(t.selections);
       const hit = top.length === need && top.every(p => coveredSet.has(p));
       if (hit) {
         won = true;
-        payout = t.potentialPayout > 0 ? t.potentialPayout : t.stake;
+        // Box combos = permutations of the selections; each carries an equal
+        // slice of the stake. 2-horse exacta box = 2, 3-horse trifecta box = 6.
+        const combos = t.type === "EXACTA" ? 2 : 6;
+        const perCombo = t.stake / combos;
+        const real = realPayout(
+          race, PAYOFF_CODE[t.type]!, perCombo,
+          combo => combo.length === need && combo.every(p => coveredSet.has(p)),
+        );
+        if (real != null && real > 0) {
+          payout = real;
+          payoutSource = "tote";
+        } else {
+          payout = t.potentialPayout > 0 ? t.potentialPayout : t.stake;
+          payoutSource = "estimated";
+        }
       }
     }
     const realizedPL = won ? payout - t.stake : -t.stake;
@@ -328,6 +406,7 @@ class Grader {
       closingOdds,
       closingEV,
       closingEVRaw,
+      ...(won ? { payoutSource } : {}),
     });
 
     const tag = t.strategyId ? `[${t.strategyId}] ` : "";
@@ -336,7 +415,9 @@ class Grader {
       ? ` · CLV ${(((t.capturedOdds - closingOdds) / closingOdds) * 100).toFixed(1)}%`
       : "";
     const pickLabel = t.selections.length > 1 ? t.selections.map(s => `#${s}`).join("-") : `#${selected}`;
-    const exoticTag = EXOTIC_IN_RACE_TYPES.has(t.type) && won ? " (est, paper)" : "";
+    const exoticTag = EXOTIC_IN_RACE_TYPES.has(t.type) && won
+      ? (payoutSource === "tote" ? " (real tote)" : " (est, paper)")
+      : "";
     this.note(
       `${tag}SETTLE ${t.raceId} ${t.type} ${pickLabel} ${won ? "WON" : "lost"}${exoticTag} ` +
       `P/L ${realizedPL >= 0 ? "+" : ""}$${realizedPL.toFixed(2)}${clvNote}  finish: ${finishOrder.join("-")}`,
@@ -396,7 +477,35 @@ class Grader {
     // Hit every leg?
     const hits = t.legs.map((leg, i) => leg.selections.includes(outcomes[i].winner!));
     const won = hits.every(Boolean);
-    const payout = won ? t.potentialPayout : 0;
+    // Real tote payout: multi-race payoffs post on the LAST leg's race
+    // results. Scale to our per-combo stake (caveman tickets spread the total
+    // stake evenly across combos; exactly one combo can hit). Falls back to
+    // the book-time estimate when the feed exposes no payoff (or for J6,
+    // which has no mapped payoff code).
+    let payout = 0;
+    let payoutSource: Ticket["payoutSource"];
+    if (won) {
+      const legs = t.legs;
+      const lastLeg = legs[legs.length - 1];
+      const lastRace = byTrackRace.get(`${t.trackCode}-${lastLeg.raceNumber}`);
+      const code = PAYOFF_CODE[t.type];
+      const combos = legs.reduce((a, l) => a * Math.max(1, l.selections.length), 1);
+      const perCombo = t.stake / combos;
+      const real = lastRace && code
+        ? realPayout(
+            lastRace, code, perCombo,
+            combo => combo.length === legs.length
+              && combo.every((p, i) => legs[i].selections.includes(p)),
+          )
+        : null;
+      if (real != null && real > 0) {
+        payout = real;
+        payoutSource = "tote";
+      } else {
+        payout = t.potentialPayout;
+        payoutSource = "estimated";
+      }
+    }
     const realizedPL = won ? payout - t.stake : -t.stake;
     const winnersFlat = outcomes.map(o => o.winner!).join("-");
 
@@ -405,13 +514,14 @@ class Grader {
       settledAt: Date.now(),
       realizedPL,
       winners: outcomes.map(o => o.winner!),
+      ...(won ? { payoutSource } : {}),
     });
 
     this.note(
       `[${t.strategyId ?? "manual"}] SETTLE ${t.trackCode} ${t.type} R${t.raceNumber} ` +
       `${won ? "WON" : "lost"} hits ${hits.map(h => h ? "✓" : "✗").join("")} ` +
       `winners ${winnersFlat} · P/L ${realizedPL >= 0 ? "+" : ""}$${realizedPL.toFixed(2)} ` +
-      `(est, paper)`,
+      `${won ? (payoutSource === "tote" ? "(real tote)" : "(est, paper)") : "(paper)"}`,
     );
   }
 }
@@ -426,7 +536,7 @@ const cachedGrader = globalThis.__toteflowGrader;
 const graderStale = !!cachedGrader && (
   typeof (cachedGrader as any).settlePickN !== "function" ||
   typeof (cachedGrader as any).sweepStaleOpen !== "function" ||
-  ((cachedGrader as any).version ?? 0) < 4
+  ((cachedGrader as any).version ?? 0) < 5
 );
 export const grader = (cachedGrader && !graderStale)
   ? cachedGrader

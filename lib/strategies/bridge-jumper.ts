@@ -53,8 +53,17 @@ function poolShares(runners: Runner[], key: "winPoolAmount" | "placePoolAmount" 
   return out;
 }
 
-// Harville-extended P(X finishes top-3) and joint probabilities for the
-// other two top-3 finishers. Returns null if probabilities are degenerate.
+// Harville-extended P(X finishes top-3) with the Stern/Henery discount.
+// Raw Harville assumes a beaten horse keeps its full relative strength for
+// the 2nd/3rd-place contests, which empirically overrates favorites off the
+// board. Standard fix (Stern 1990; Lo & Bacon-Shone 1994): dampen win probs
+// with exponents < 1 before renormalizing — ~0.81 for the 2nd-place contest,
+// ~0.65 for 3rd (longshots fill minor placings more often than Harville says).
+const STERN_LAMBDA_2ND = 0.81;
+const STERN_LAMBDA_3RD = 0.65;
+
+// Returns P(X top-3) and joint probabilities for the other two top-3
+// finishers. Returns null if probabilities are degenerate.
 function topThreeJoint(targetProgram: string, winP: Map<string, number>): {
   pTopThree: number;
   jointPairs: Array<{ a: string; b: string; prob: number }>;
@@ -63,14 +72,30 @@ function topThreeJoint(targetProgram: string, winP: Map<string, number>): {
   if (pX <= 0) return null;
   const others = Array.from(winP.entries()).filter(([k]) => k !== targetProgram);
 
+  // Discounted strengths: s for the 2nd-place contest, u for 3rd.
+  const s = new Map<string, number>();
+  const u = new Map<string, number>();
+  let S = 0, U = 0;
+  for (const [k, pk] of winP) {
+    const sv = Math.pow(Math.max(0, pk), STERN_LAMBDA_2ND);
+    const uv = Math.pow(Math.max(0, pk), STERN_LAMBDA_3RD);
+    s.set(k, sv); S += sv;
+    u.set(k, uv); U += uv;
+  }
+  // P(a 1st, b 2nd, c 3rd) = p_a · s_b/(S - s_a) · u_c/(U - u_a - u_b)
+  const ordered = (a: string, b: string, c: string): number => {
+    const pa = winP.get(a) ?? 0;
+    const d2 = Math.max(0.001, S - (s.get(a) ?? 0));
+    const d3 = Math.max(0.001, U - (u.get(a) ?? 0) - (u.get(b) ?? 0));
+    return pa * ((s.get(b) ?? 0) / d2) * ((u.get(c) ?? 0) / d3);
+  };
+
   let pTopThree = pX;
   const jointPairs: Array<{ a: string; b: string; prob: number }> = [];
 
   // For each ordered pair (j, k) of distinct other runners, compute the
   // probability that the top-3 are (X, j, k) or some permutation. We
   // aggregate by unordered pair {j, k} below.
-  // P(j 1st, k 2nd, X 3rd) = pj * pk/(1-pj) * pX/(1-pj-pk)
-  // Sum permutations to get P(top-3 = {X, j, k}).
   const pairProb = new Map<string, number>();
   const pairAdd = (a: string, b: string, p: number) => {
     if (a > b) [a, b] = [b, a];
@@ -79,30 +104,25 @@ function topThreeJoint(targetProgram: string, winP: Map<string, number>): {
   };
 
   for (const [j, pj] of others) {
-    const denom1 = Math.max(0.001, 1 - pj);
     // P(j 1st, X 2nd) — contributes to pTopThree (X is in top-2, hence top-3 too)
-    const pJ_X_2nd = pj * (pX / denom1);
-    // Don't double-count: when computing top-3 prob, we sum P(X 1st)+P(X 2nd)+P(X 3rd).
-    // P(X 1st) = pX (already counted). P(X 2nd) = sum_j pj * pX/(1-pj). P(X 3rd) below.
+    // Don't double-count: pTopThree = P(X 1st) + P(X 2nd) + P(X 3rd).
+    // P(X 1st) = pX (already counted). P(X 2nd) here. P(X 3rd) below.
+    const pJ_X_2nd = pj * ((s.get(targetProgram) ?? 0) / Math.max(0.001, S - (s.get(j) ?? 0)));
     pTopThree += pJ_X_2nd;
 
-    for (const [k, pk] of others) {
+    for (const [k] of others) {
       if (k === j) continue;
-      const denom2 = Math.max(0.001, 1 - pj - pk);
-      if (denom2 <= 0) continue;
 
       // P(j 1st, k 2nd, X 3rd) — X is 3rd, top-3 trio is {X, j, k}
-      const p_j_k_X = pj * (pk / denom1) * (pX / denom2);
+      const p_j_k_X = ordered(j, k, targetProgram);
       pTopThree += p_j_k_X;
       pairAdd(j, k, p_j_k_X);
 
       // P(j 1st, X 2nd, k 3rd) — X is 2nd, top-3 trio is {X, j, k}
-      const p_j_X_k = pj * (pX / denom1) * (pk / Math.max(0.001, 1 - pj - pX));
-      pairAdd(j, k, p_j_X_k);
+      pairAdd(j, k, ordered(j, targetProgram, k));
 
       // P(X 1st, j 2nd, k 3rd) — X is 1st, top-3 trio is {X, j, k}
-      const p_X_j_k = pX * (pj / Math.max(0.001, 1 - pX)) * (pk / Math.max(0.001, 1 - pX - pj));
-      pairAdd(j, k, p_X_j_k);
+      pairAdd(j, k, ordered(targetProgram, j, k));
     }
   }
 

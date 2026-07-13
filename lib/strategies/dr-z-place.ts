@@ -73,7 +73,15 @@ function poolShares(runners: Runner[], key: "winPoolAmount" | "placePoolAmount" 
   return out;
 }
 
-// Harville: P(i is 2nd | j wins) = p_i / (1 - p_j).
+// Harville with the Stern/Henery discount. Raw Harville (P(i 2nd | j wins) =
+// p_i / (1 - p_j)) assumes a beaten horse keeps its full relative strength,
+// which empirically overrates favorites for 2nd place (beaten favorites often
+// finish nowhere). Standard correction (Stern 1990; Lo & Bacon-Shone 1994):
+// dampen win probs with an exponent < 1 before renormalizing for the
+// second-place contest — fitted at ~0.81 on large HK/US samples and used in
+// later editions of Ziemba's own place/show work.
+const STERN_LAMBDA_2ND = 0.81;
+
 // Returns P(horse X finishes top-2) and the conditional joint probabilities
 // P(X top-2 AND j is the other top-2 finisher) for each j != X.
 function topTwoJointProbs(targetProgram: string, winP: Map<string, number>): {
@@ -81,14 +89,24 @@ function topTwoJointProbs(targetProgram: string, winP: Map<string, number>): {
   jointOther: Map<string, number>;
 } {
   const pX = winP.get(targetProgram) ?? 0;
+  // Discounted strengths for the 2nd-place contest.
+  const s = new Map<string, number>();
+  let S = 0;
+  for (const [k, pk] of winP) {
+    const v = Math.pow(Math.max(0, pk), STERN_LAMBDA_2ND);
+    s.set(k, v);
+    S += v;
+  }
+  const sX = s.get(targetProgram) ?? 0;
   const jointOther = new Map<string, number>();
   let pTopTwo = pX;  // P(X wins) already counts as top-2
   for (const [j, pj] of winP) {
     if (j === targetProgram) continue;
-    // P(X = 1st, j = 2nd) = pX * pj / (1 - pX)
-    const pXfirst_jSecond = pX > 0 ? pX * (pj / Math.max(0.001, 1 - pX)) : 0;
-    // P(j = 1st, X = 2nd) = pj * pX / (1 - pj)
-    const pJfirst_XSecond = pj * (pX / Math.max(0.001, 1 - pj));
+    const sj = s.get(j) ?? 0;
+    // P(X = 1st, j = 2nd) = pX * s_j / (S - s_X)
+    const pXfirst_jSecond = pX > 0 ? pX * (sj / Math.max(0.001, S - sX)) : 0;
+    // P(j = 1st, X = 2nd) = pj * s_X / (S - s_j)
+    const pJfirst_XSecond = pj * (sX / Math.max(0.001, S - sj));
     // P(X top-2 AND j is the other one) = sum of the two orderings
     jointOther.set(j, pXfirst_jSecond + pJfirst_XSecond);
     pTopTwo += pJfirst_XSecond;  // contribute the "X is 2nd" cases (X-wins already in pX above)
