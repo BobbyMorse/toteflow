@@ -635,18 +635,19 @@ function OpenBetCard({ group: g }: { group: OpenBetGroup }) {
                   <div>
                     <span className="text-ink-2">P win: </span>
                     <span className="text-ink-0">{(liveTrueP * 100).toFixed(1)}%</span>
+                    <span className="text-ink-2 ml-1">({decimalToFractional(1 / liveTrueP)})</span>
                   </div>
                 )}
                 <div>
                   <span className="text-ink-2">live: </span>
                   <span className="text-ink-0">{decimalToFractional(liveOdds)}</span>
-                  <span className="text-ink-2 ml-1">({liveOdds.toFixed(2)})</span>
+                  <span className="text-ink-2 ml-1">({(100 / liveOdds).toFixed(2)}%)</span>
                 </div>
                 {fairDecimal != null && (
                   <div>
                     <span className="text-ink-2">fair: </span>
                     <span className="text-ink-0">{decimalToFractional(fairDecimal)}</span>
-                    <span className="text-ink-2 ml-1">({fairDecimal.toFixed(2)})</span>
+                    <span className="text-ink-2 ml-1">({(100 / fairDecimal).toFixed(2)}%)</span>
                     {marketVsFairPct != null && Math.abs(marketVsFairPct) >= 1 && (
                       <span className={clsx("ml-2",
                         marketVsFairPct > 0 ? "text-accent-overlay" : "text-accent-steam"
