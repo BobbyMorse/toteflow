@@ -461,7 +461,7 @@ class Engine {
       if (!leg.picks[0]) return 1;
       let count = 1;
       const secondPick = leg.picks[1];
-      if (secondPick && secondPick.evPercent >= 0 && secondPick.truePWin >= 0.05) {
+      if (secondPick && secondPick.evPercent >= 0 && secondPick.truePWin != null && secondPick.truePWin >= 0.05) {
         count = 2;
       }
       return count;

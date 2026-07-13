@@ -46,12 +46,29 @@ function build(id: string, name: string, appliesTo: Discipline[], calibrate: Tru
         if (ev > 0 && (best == null || ev > best.ev)) best = { runner: r, ev, trueP: calibP };
       }
       if (!best) return null;
+
+      // CRITICAL VALIDATION: ensure returned P and EV are mathematically consistent.
+      // If they diverge, recalculate EV from P to prevent storing impossible pairs
+      // like "19.7% → +17.6% @ 3/1 odds" (which is mathematically impossible).
+      const recomputedEV = evPercentFromTrueP(best.trueP, best.runner.currentOdds, takeout);
+      const evDivergence = Math.abs(recomputedEV - best.ev);
+      let finalEV = best.ev;
+      if (evDivergence > 2.0) {
+        // EV diverges by more than 2pp — recalculate it from the P to ensure consistency.
+        console.warn(
+          `[${this.id}] Corrected EV on ${best.runner.name}: ` +
+          `trueP=${(best.trueP * 100).toFixed(1)}% @ ${best.runner.currentOdds.toFixed(2)}x ` +
+          `was ${best.ev.toFixed(1)}%, recalculated to ${recomputedEV.toFixed(1)}%`
+        );
+        finalEV = recomputedEV;
+      }
+
       return {
         selection: best.runner.program,
         type: "WIN",
-        evPercent: best.ev,
+        evPercent: finalEV,
         truePWin: best.trueP,
-        reason: `TVG model P=${(best.trueP * 100).toFixed(1)}% → EV +${best.ev.toFixed(1)}% on ${best.runner.name} (model: high, calibrated)`,
+        reason: `TVG model P=${(best.trueP * 100).toFixed(1)}% → EV +${finalEV.toFixed(1)}% on ${best.runner.name} (model: high, calibrated)`,
         confidence: 0.6,
       };
     },
