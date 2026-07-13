@@ -454,13 +454,17 @@ class Engine {
     );
     if (dup) return;
 
-    // Build caveman: top-1 if the leg has a strong overlay (top EV ≥ +10%),
-    // else top-2. Strong-overlay singles concentrate stake on conviction picks
-    // and drop combo count fast.
+    // Build caveman: always include top pick. Add 2nd pick if it has positive EV
+    // and isn't too much of a long shot (≥5% win prob). This balances edge
+    // (profitability at market odds) with hit rate (horses likely enough to win).
     const legSizes = o.legs.map(leg => {
-      const top = leg.picks[0];
-      if (top && top.evPercent >= 10) return 1;
-      return Math.min(2, leg.picks.length);
+      if (!leg.picks[0]) return 1;
+      let count = 1;
+      const secondPick = leg.picks[1];
+      if (secondPick && secondPick.evPercent >= 0 && secondPick.truePWin >= 0.05) {
+        count = 2;
+      }
+      return count;
     });
 
     // Cost cap: shrink top-2 → top-1 in legs with the smallest EV gap between
