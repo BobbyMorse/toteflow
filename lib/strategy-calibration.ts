@@ -85,3 +85,22 @@ export function adapterTruePFromRawEV(
   if (!(p > 0 && p < 1)) return null;
   return p;
 }
+
+// Validate that capturedTrueP and capturedEV are mathematically consistent.
+// Returns true if they match within tolerance, false if mismatched.
+// This catches cases where P and EV were calculated from different odds or
+// one got corrupted during save/reload.
+export function validateEVConsistency(
+  capturedTrueP: number | null | undefined,
+  capturedEV: number | null | undefined,
+  capturedOdds: number | null | undefined,
+  takeout: number = 0.16,
+  tolerancePct: number = 1.0, // allow 1% EV divergence due to rounding
+): boolean {
+  if (!capturedTrueP || capturedEV == null || !capturedOdds) return true; // can't validate without all values
+  if (capturedOdds <= 1) return true; // invalid odds, can't validate
+
+  const recomputedEV = evPercentFromTrueP(capturedTrueP, capturedOdds, takeout);
+  const divergence = Math.abs(recomputedEV - capturedEV);
+  return divergence <= tolerancePct;
+}

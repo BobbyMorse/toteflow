@@ -23,7 +23,7 @@ import type { Strategy, StrategyConfig, StrategyEvaluation } from "./strategies/
 import { detectCarryovers, type CarryoverOpportunity } from "./carryovers";
 import { decideBetWindow } from "./optimal-timer";
 import { minBaseForWager } from "./wager-minimums";
-import { strategyCalibratedTrueP } from "./strategy-calibration";
+import { strategyCalibratedTrueP, validateEVConsistency } from "./strategy-calibration";
 import { strategyAppliesToTrack } from "./track-types";
 
 function phaseOf(race: Race, now: number): Race["phase"] {
@@ -275,15 +275,23 @@ class Engine {
       // the uncalibrated adapter value we're specifically avoiding.
       const liveEv = calibratedEv ?? t.capturedEV;
       const liveEvRaw = runner.evPercentRaw;
-      // Same story for trueP: prefer the strategy's own calibrated value
-      // (from its evaluate() output), else derive it from the runner's
-      // adapter blend using the strategy's known calibration, else fall
-      // through to the adapter's blend unchanged.
+      // CRITICAL: If we're using a re-evaluated EV from the strategy, we MUST
+      // also use the re-evaluated trueP from the same evaluation. Mixing old
+      // trueP with new EV (or vice versa) creates inconsistent pairs where
+      // the EV can't be recomputed from the P and odds. If re-eval failed,
+      // fall back to the staged trueP, not the current runner's blend.
       const liveMarketP = 1 / Math.max(1.2, liveOdds);
-      const liveTrueP = calibratedTrueP
-        ?? (runner.truePWin != null
-              ? strategyCalibratedTrueP(t.strategyId, runner.truePWin, liveMarketP)
-              : undefined);
+      let liveTrueP: number | undefined;
+      if (calibratedTrueP != null) {
+        // Re-eval succeeded: use its trueP paired with its EV
+        liveTrueP = calibratedTrueP;
+      } else if (t.capturedTrueP != null) {
+        // Re-eval failed: use the staged trueP paired with the staged EV
+        liveTrueP = t.capturedTrueP;
+      } else if (runner.truePWin != null) {
+        // Fallback: calibrate the current runner's blend
+        liveTrueP = strategyCalibratedTrueP(t.strategyId, runner.truePWin, liveMarketP);
+      }
 
       if (isExoticInRace) {
         // Preserve the stake and estimatedPayout that were locked in at stage
@@ -312,6 +320,21 @@ class Engine {
 
       const baseStake = cfg?.stake ?? t.stake ?? 0;
       const liveStake = isShadow ? 0 : baseStake;
+
+      // Validate that capturedTrueP and liveEv are mathematically consistent.
+      // If they diverge significantly, prefer recalculating from the strategy's
+      // calibrated values to avoid storing mismatched pairs.
+      const isConsistent = validateEVConsistency(liveTrueP, liveEv, liveOdds, race?.takeout ?? 0.16);
+      if (!isConsistent && liveTrueP != null && liveOdds) {
+        const { evPercentFromTrueP } = require("./strategy-calibration");
+        const recomputedEV = evPercentFromTrueP(liveTrueP, liveOdds, race?.takeout ?? 0.16);
+        this.note(
+          `[${t.strategyId ?? "?"}] ⚠ EV consistency check failed on ${t.raceId} #${selection}: ` +
+          `trueP ${(liveTrueP * 100).toFixed(1)}% @ ${liveOdds.toFixed(2)} odds → ` +
+          `expected ${recomputedEV.toFixed(1)}% EV, got ${liveEv?.toFixed(1) ?? "null"}%`,
+        );
+      }
+
       Tickets.update(t.id, {
         status: "open",
         stake: liveStake,

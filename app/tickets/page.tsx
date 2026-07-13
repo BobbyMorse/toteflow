@@ -7,7 +7,7 @@ import { useToteflow } from "@/lib/store";
 import { decideBetWindow, type BetWindowDecision } from "@/lib/optimal-timer";
 import { apiUrl } from "@/lib/api-url";
 import type { AutobookState } from "@/lib/autobook-view";
-import { strategyCalibratedTrueP, evPercentFromTrueP } from "@/lib/strategy-calibration";
+import { strategyCalibratedTrueP, evPercentFromTrueP, validateEVConsistency } from "@/lib/strategy-calibration";
 import Link from "next/link";
 import clsx from "clsx";
 
@@ -1036,6 +1036,12 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
   const clv = t.type === "WIN" && t.closingOdds && t.capturedOdds
     ? ((t.capturedOdds - t.closingOdds) / t.closingOdds) * 100
     : null;
+  // Validate that capturedEV and capturedTrueP are consistent. If they diverge,
+  // flag the row for manual review since it indicates corrupted data or a calculation bug.
+  const evConsistent = validateEVConsistency(t.capturedTrueP, t.capturedEV, t.capturedOdds, 0.16, 1.5);
+  const evMismatchWarning = !evConsistent && t.capturedTrueP && t.capturedEV && t.capturedOdds
+    ? ` (⚠ Data inconsistency: P=${(t.capturedTrueP * 100).toFixed(1)}% + ${t.capturedOdds.toFixed(2)}x odds don't match ${t.capturedEV.toFixed(1)}% EV)`
+    : "";
   // Closing EV grades the bet WE locked in.
   // - WIN: derive by scaling captured EV by the odds drift (constant-trueP:
   //   same horse, same model probability, just rescaled payout). We prefer
@@ -1165,7 +1171,12 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
           </div>
         )}
         {t.reason && (
-          <div className="text-[11px] text-ink-2 italic">{t.reason}</div>
+          <div className="text-[11px] text-ink-2 italic">
+            {t.reason}
+            {evMismatchWarning && (
+              <div className="text-accent-steam mt-1">⚠ {evMismatchWarning}</div>
+            )}
+          </div>
         )}
       </div>
 
