@@ -10,8 +10,9 @@ import type { Race, Runner } from "../types";
 //
 // Honest limits:
 //   - We don't have DD-pool data from TVG for per-combo payout, so we
-//     estimate payout as fair (1/jointHit) discounted by takeout. Same
-//     paper-precise caveat as exacta/trifecta/Pick-N.
+//     estimate payout from the MARKET-implied joint probability (leg WIN
+//     odds) discounted by takeout, and hit chance from the MODEL's joint
+//     probability. Same paper-precise caveat as exacta/trifecta/Pick-N.
 //   - We don't fire if leg-2's race postTime is more than 45 min after
 //     leg-1 (in case of cancellations or schedule gaps).
 //   - We only consider top-1 picks per leg (single-combo DD), the cheapest
@@ -23,7 +24,14 @@ const MIN_LEG_TRUEP = 0.18;
 const MIN_LEG_EV_PCT = 2;              // each leg must show ≥2% WIN-pool EV
 const DD_TAKEOUT_FALLBACK = 0.21;
 
-function bestLegPick(race: Race): { runner: Runner; truP: number; evPct: number } | null {
+// Per-leg pick with both probability scales normalized across the live field:
+//   p = model probability (truePWin renormalized to sum to 1)
+//   q = market-implied probability (1/odds renormalized to sum to 1 — the raw
+//       1/odds values sum to ~1/(1-takeout) because displayed odds are net of
+//       takeout, so normalizing recovers the market's real probability)
+// The DD EV needs both on the same real-probability scale: p drives the hit
+// chance, q drives the payout estimate.
+function bestLegPick(race: Race): { runner: Runner; p: number; q: number; evPct: number } | null {
   if (race.modelQuality !== "high") return null;
   const live = race.runners.filter(r => !r.scratched && r.currentOdds < 60 && (r.truePWin ?? 0) > 0);
   if (live.length < 5) return null;
@@ -31,9 +39,14 @@ function bestLegPick(race: Race): { runner: Runner; truP: number; evPct: number 
   const sorted = [...live].sort((a, b) => b.evPercent - a.evPercent);
   const top = sorted[0];
   if (top.evPercent < MIN_LEG_EV_PCT) return null;
-  const truP = top.truePWin ?? 0;
-  if (truP < MIN_LEG_TRUEP) return null;
-  return { runner: top, truP, evPct: top.evPercent };
+  if ((top.truePWin ?? 0) < MIN_LEG_TRUEP) return null;
+  const pSum = live.reduce((s, r) => s + (r.truePWin ?? 0), 0);
+  const qSum = live.reduce((s, r) => s + 1 / Math.max(1.2, r.currentOdds), 0);
+  if (pSum <= 0 || qSum <= 0) return null;
+  const p = (top.truePWin ?? 0) / pSum;
+  const q = (1 / Math.max(1.2, top.currentOdds)) / qSum;
+  if (q <= 0) return null;
+  return { runner: top, p, q, evPct: top.evPercent };
 }
 
 function ddTakeout(race: Race): number {
@@ -75,19 +88,24 @@ export const ddConsensusStrategy: Strategy = {
         const p2 = bestLegPick(leg2);
         if (!p2) continue;
 
-        const hitProb = p1.truP * p2.truP;
-        if (hitProb <= 0) continue;
+        // Hit chance from the MODEL's joint probability; payout from the
+        // MARKET's joint probability. The old formula used the model prob for
+        // both, which cancels to EV = -takeout by construction — the strategy
+        // could never fire. The edge thesis is model-vs-market divergence:
+        //   payout per $1 ≈ (1 - t_dd) / (q1·q2)   (public prices the combo
+        //   at its market-implied joint prob, takeout deducted once)
+        //   EV = p1·p2 · payout - 1 = (1 - t_dd) · (p1·p2)/(q1·q2) - 1
+        const hitProb = p1.p * p2.p;
+        const marketProb = p1.q * p2.q;
+        if (hitProb <= 0 || marketProb <= 0) continue;
 
-        // Single-combo DD: base price = $1 (most tracks). For paper EV math
-        // use that; the booker rescales by cfg.stake at fire time.
+        // Single-combo DD: base price = $1. The booker rescales stake AND
+        // estimatedPayout (via stakeBasis) to cfg.stake at book time.
         const stake = 1;
         const takeout = ddTakeout(leg1);
-        // Implied "fair" decimal price for the DD combo = 1 / hitProb. Public
-        // pari-mutuel pays roughly that × (1 - takeout) in steady state.
-        const fairDecimal = 1 / hitProb;
-        const expectedPayout = stake * fairDecimal * (1 - takeout);
-        if (expectedPayout <= stake) continue;
-        const ev = (hitProb * expectedPayout / stake - 1) * 100;
+        const payoutPerDollar = (1 - takeout) / marketProb;
+        const expectedPayout = stake * payoutPerDollar;
+        const ev = (hitProb * payoutPerDollar - 1) * 100;
         if (ev <= 0) continue;
 
         out.push({
@@ -102,11 +120,12 @@ export const ddConsensusStrategy: Strategy = {
           evPercent: ev,
           reason:
             `DD ${trackCode} R${leg1.raceNumber}-R${leg2.raceNumber}: ` +
-            `${p1.runner.name} (+${p1.evPct.toFixed(1)}% / trueP ${(p1.truP*100).toFixed(0)}%) ` +
-            `→ ${p2.runner.name} (+${p2.evPct.toFixed(1)}% / trueP ${(p2.truP*100).toFixed(0)}%) ` +
+            `${p1.runner.name} (+${p1.evPct.toFixed(1)}% / P ${(p1.p*100).toFixed(0)}% vs mkt ${(p1.q*100).toFixed(0)}%) ` +
+            `→ ${p2.runner.name} (+${p2.evPct.toFixed(1)}% / P ${(p2.p*100).toFixed(0)}% vs mkt ${(p2.q*100).toFixed(0)}%) ` +
             `· est hit ${(hitProb*100).toFixed(1)}% · est payout $${expectedPayout.toFixed(0)} on $${stake} (paper)`,
           confidence: Math.min(0.6, 0.3 + Math.min(p1.evPct, p2.evPct) / 20),
           estimatedPayout: expectedPayout,
+          stakeBasis: stake,
           combos: 1,
         });
       }

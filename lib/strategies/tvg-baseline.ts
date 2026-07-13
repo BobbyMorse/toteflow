@@ -43,42 +43,21 @@ function build(id: string, name: string, appliesTo: Discipline[], calibrate: Tru
         const marketP = 1 / Math.max(1.2, r.currentOdds);
         const calibP = calibrate(r.truePWin, marketP);
         const ev = evPercentFromTrueP(calibP, r.currentOdds, takeout);
-        // DEBUG: log the calculation steps
-        if (ev > 0) {
-          console.log(
-            `[${id}] ${r.name}: adapterP=${(r.truePWin * 100).toFixed(1)}% → ` +
-            `calibP=${(calibP * 100).toFixed(1)}% → ` +
-            `EV=${ev.toFixed(1)}% @ ${r.currentOdds.toFixed(2)}x odds`
-          );
-        }
         if (ev > 0 && (best == null || ev > best.ev)) best = { runner: r, ev, trueP: calibP };
       }
       if (!best) return null;
 
-      // CRITICAL VALIDATION: ensure returned P and EV are mathematically consistent.
-      // If they diverge, recalculate EV from P to prevent storing impossible pairs
-      // like "19.7% → +17.6% @ 3/1 odds" (which is mathematically impossible).
-      // CRITICAL: Always recalculate EV from P using the exact formula. This ensures
-      // we never store P/EV pairs that don't match mathematically. The formula is
-      // deterministic and correct; if the calculated EV diverges, use the formula's result.
-      const formulaEV = evPercentFromTrueP(best.trueP, best.runner.currentOdds, takeout);
-      const evDivergence = Math.abs(formulaEV - best.ev);
-      let finalEV = formulaEV;  // Always use formula as source of truth
-
-      if (evDivergence > 0.5) {
-        console.warn(
-          `[${this.id}] EV correction on ${best.runner.name}: ` +
-          `P=${(best.trueP * 100).toFixed(1)}% @ ${best.runner.currentOdds.toFixed(2)}x gave ` +
-          `${best.ev.toFixed(1)}%, corrected to ${finalEV.toFixed(1)}% (diff: ${evDivergence.toFixed(1)}pp)`
-        );
-      }
-
+      // P, EV, and odds here all come from the same evPercentFromTrueP call
+      // above, so the returned pair is consistent by construction. Historical
+      // "impossible pairs" (e.g. P=9.1% with EV=+24.2%) were caused by
+      // autobook capturing P and EV at different odds snapshots — fixed in
+      // promoteStagedTickets by pairing re-eval P with re-eval EV atomically.
       return {
         selection: best.runner.program,
         type: "WIN",
-        evPercent: finalEV,
+        evPercent: best.ev,
         truePWin: best.trueP,
-        reason: `TVG model P=${(best.trueP * 100).toFixed(1)}% → EV +${finalEV.toFixed(1)}% on ${best.runner.name} (model: high, calibrated)`,
+        reason: `TVG model P=${(best.trueP * 100).toFixed(1)}% → EV +${best.ev.toFixed(1)}% on ${best.runner.name} (model: high, calibrated)`,
         confidence: 0.6,
       };
     },

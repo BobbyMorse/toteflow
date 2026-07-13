@@ -8,9 +8,10 @@ import type { Race } from "../types";
 //
 // Honest limits:
 //   - We can't see per-combo trifecta payoffs from TVG's results feed, so
-//     payout is estimated from Harville top-3 joint probability across all
-//     6 orderings × the trifecta pool. Same caveat as exacta: directional,
-//     not bookable-precise.
+//     the on-hit payout is estimated from the MARKET-implied Harville
+//     probability of each ordering (WIN odds, normalized) minus takeout,
+//     and the hit chance from the MODEL's Harville probability. Same caveat
+//     as exacta: directional, not bookable-precise.
 //   - 6-combo box × $0.50 base = $3 ticket at most tracks. Fires only when
 //     trifecta pool is meaningful enough that the payout estimate is sane.
 
@@ -58,38 +59,41 @@ export const trifectaKeyStrategy: Strategy = {
     if (pA < MIN_INDIVIDUAL_TRUEP || pB < MIN_INDIVIDUAL_TRUEP || pC < MIN_INDIVIDUAL_TRUEP) return null;
     if (pA + pB + pC < MIN_TOP3_COMBINED_TRUEP) return null;
 
-    // Sum Harville probability across all 6 orderings of {a,b,c}.
+    const takeout = trifectaTakeout(race);
+    const stake = 0.50 * BOX_COMBOS;   // $0.50 base × 6 combos; booker rescales via stakeBasis
+
+    // Model-vs-market box math (same approach as exacta-overlay-pair). We
+    // assume the public prices each ordered triple at its MARKET-implied
+    // Harville probability q_o (from WIN odds, normalized to the real
+    // probability scale), so a hit on ordering o pays (stake/6)·(1-t)/q_o.
+    // Edge = model Harville p_o exceeding q_o, summed over the 6 orderings:
+    //   EV per $1 = (1/6)·(1-t)·Σ (p_o / q_o) - 1
+    // The OLD version used a flat "+12% overlay credit" that could never
+    // beat exotic takeout (>= 0.19 at every US track) — the strategy was
+    // mathematically unable to fire. Before that, treating the whole pool
+    // as one combo's payout produced 10,000%+ EVs. Both wrong.
+    const pSum = live.reduce((s, r) => s + (r.truePWin ?? 0), 0);
+    const qSum = live.reduce((s, r) => s + 1 / Math.max(1.2, r.currentOdds), 0);
+    if (pSum <= 0 || qSum <= 0) return null;
+    const ps = [pA / pSum, pB / pSum, pC / pSum];
+    const qs = [a, b, c].map(r => (1 / Math.max(1.2, r.currentOdds)) / qSum);
+
     let hitProb = 0;
-    const ps = [pA, pB, pC];
+    let expectedReturn = 0;   // probability-weighted payout per $1 of ticket
+    const perCombo = 1 / BOX_COMBOS;
     for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) {
       if (i === j || j === k || i === k) continue;
-      hitProb += jointTopThree(ps[i], ps[j], ps[k]);
+      const pO = jointTopThree(ps[i], ps[j], ps[k]);
+      const qO = jointTopThree(qs[i], qs[j], qs[k]);
+      if (qO <= 0) continue;
+      hitProb += pO;
+      expectedReturn += pO * perCombo * (1 - takeout) / qO;
     }
     if (hitProb <= 0) return null;
 
-    const takeout = trifectaTakeout(race);
-    const stake = 0.50 * BOX_COMBOS;
-
-    // Parimutuel reality check: at fair (efficient) pricing, expected return
-    // per $1 staked in any pool = (1 - takeout). The OLD formula treated the
-    // ENTIRE trifecta pool as if our single winning combo collected it, which
-    // produced absurd 10,000%+ EVs (real 19341% in DB row TVG-FRT-3).
-    //
-    // To extract real edge on an exotic we need per-combo $ data so we can
-    // see where the public is mispricing. The feed doesn't expose that, so we
-    // can only estimate an "overlay credit" heuristically: a chalk-light box
-    // (the favorite isn't dominant and the field is genuinely competitive)
-    // tends to pay better than fair on non-chalk-chalk-chalk orderings,
-    // because the public overbets the chalk combo.
-    //
-    // Conservative credit: +12% only when the top horse is < 35% trueP AND
-    // the three-horse box is broadly distributed. Otherwise no edge claim.
-    const isDiverseBox = pA < 0.35 && Math.max(pA, pB, pC) - Math.min(pA, pB, pC) < 0.20;
-    const overlayCredit = isDiverseBox ? 0.12 : 0;
-    const expectedRoi = -takeout + overlayCredit;
-    if (expectedRoi <= 0) return null;
-    const ev = expectedRoi * 100;
-    const expectedPayout = stake * (1 + expectedRoi);
+    const ev = (expectedReturn - 1) * 100;
+    if (ev <= 0) return null;
+    const expectedPayout = stake * expectedReturn / hitProb;   // on-hit payout — what the grader pays
 
     return {
       selections: [a.program, b.program, c.program],
@@ -102,6 +106,7 @@ export const trifectaKeyStrategy: Strategy = {
         `· est payout $${expectedPayout.toFixed(0)} on $${stake} (paper)`,
       confidence: Math.min(0.55, 0.3 + (pA + pB + pC - MIN_TOP3_COMBINED_TRUEP)),
       estimatedPayout: expectedPayout,
+      stakeBasis: stake,
       combos: BOX_COMBOS,
     };
   },

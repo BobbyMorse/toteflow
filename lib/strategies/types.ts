@@ -37,6 +37,12 @@ export interface StrategyEvaluation {
   // capturedOdds × stake). Single-pick wagers can leave this unset; the
   // booker derives potentialPayout from live odds at fire time.
   estimatedPayout?: number;
+  // Total stake (dollars) that estimatedPayout was computed against. Pari-
+  // mutuel payouts scale linearly with stake, so the booker rescales
+  // estimatedPayout by (actualTicketStake / stakeBasis) when it books at a
+  // different configured stake. Unset → booker assumes estimatedPayout was
+  // computed at the actual ticket stake (no rescale).
+  stakeBasis?: number;
   // For exotic wagers — number of combinations covered (e.g. 2-horse exacta
   // box = 2; 3-horse trifecta box = 6; DD = product of leg sizes).
   combos?: number;

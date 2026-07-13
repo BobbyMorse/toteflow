@@ -7,10 +7,11 @@ import type { Race } from "../types";
 // are filtered out — those are precisely where the exacta pool is over-bet.
 //
 // Honest limits:
-//   - TVG's feed doesn't expose per-combo exacta payoffs, so we estimate
-//     payout from Harville top-2 joint probability and the exacta pool size
-//     (minus takeout). The booker records that as `potentialPayout`; the
-//     grader uses it to compute paper P/L on a hit. Paper-precise, not
+//   - TVG's feed doesn't expose per-combo exacta payoffs, so we estimate the
+//     on-hit payout from the MARKET-implied Harville joint probability (WIN
+//     odds, normalized) minus takeout, and the hit chance from the MODEL's
+//     joint probability. The booker records the on-hit payout as
+//     `potentialPayout`; the grader pays it on a hit. Paper-precise, not
 //     bookable-precise.
 
 const MIN_SECONDS_TO_POST = 15;
@@ -28,37 +29,31 @@ function jointTopTwo(pI: number, pJ: number): number {
   return (pI * pJ) / Math.max(0.001, 1 - pI);
 }
 
-// Estimate the per-combo exacta payoff using pari-mutuel arithmetic plus a
-// public-overbets-chalk correction. Standard pari-mutuel says that under fair
-// public action the expected payoff on combo (i,j) is roughly
-//    pool_after_takeout / (n_total_tickets * jointTopTwo(i,j))
-// We don't know n_total_tickets. We can back into it from the simplifying
-// assumption that the public bets each combo roughly proportional to its
-// Harville top-2 probability; that collapses to (1 - takeout) * E[payoff]
-// = 1, i.e. uniformly zero-edge. The actual edge comes from the public
-// overbetting chalk-on-chalk combos and underbetting two-horse pairings
-// where one is a mid-price contender — captured by a small `chalkPenalty`
-// applied to all-favorite pairings.
+// Model-vs-market exacta box math. We don't have per-combo exacta pool data,
+// so we assume the public prices each ordered combo at its MARKET-implied
+// Harville probability (from WIN odds, normalized to the real probability
+// scale). Under that assumption a $1 bet on ordered combo (i,j) pays
+// (1 - takeout) / q_ij on a hit. Our edge is the model's joint probability
+// p_ij exceeding the market's q_ij:
+//   EV per $1 of box = 0.5 * (1-t) * (pAB/qAB + pBA/qBA) - 1
+// (each ordering carries half the box stake). The OLD version used a flat
+// "overlay credit" (+0.10) that could never beat exotic takeout (>=0.19 at
+// every US track) — the strategy was mathematically unable to fire.
 function estimateBoxPayout(
   takeout: number,
   stake: number,
-  jointAB: number, jointBA: number,
-  pAOdds: number, pBOdds: number,
-): { hitProb: number; expectedPayout: number } {
-  const hitProb = jointAB + jointBA;
-  if (hitProb <= 0) return { hitProb: 0, expectedPayout: 0 };
-  // Parimutuel reality: at fair pricing, expected payout per $1 wagered =
-  // (1 - takeout). The OLD formula `poolAfterTake / hitProb` mistook the
-  // entire pool for a single winning combo's payout — produced 10,000%+ EVs.
-  // Real exotic edge requires per-combo $ data we don't have. We apply a
-  // conservative overlay credit when the box is *not* chalk-on-chalk —
-  // public overbets the all-favorite combo, and a diversified box collects
-  // the underbet leg pairings.
-  const chalkHeavy = pAOdds < 3.0 && pBOdds < 3.0;
-  const overlayCredit = chalkHeavy ? 0 : 0.10; // ~10% credit on diversified boxes
-  const expectedRoi = -takeout + overlayCredit;
-  const expectedPayout = stake * (1 + expectedRoi);
-  return { hitProb, expectedPayout };
+  pAB: number, pBA: number,
+  qAB: number, qBA: number,
+): { hitProb: number; payoutIfHit: number; evPct: number } {
+  const hitProb = pAB + pBA;
+  if (hitProb <= 0 || qAB <= 0 || qBA <= 0) return { hitProb: 0, payoutIfHit: 0, evPct: -100 };
+  const half = stake / 2;
+  // Probability-weighted expected payout across the two orderings.
+  const expectedPayout = pAB * half * (1 - takeout) / qAB
+                       + pBA * half * (1 - takeout) / qBA;
+  const payoutIfHit = expectedPayout / hitProb;   // conditional on hitting — what the grader pays
+  const evPct = (expectedPayout / stake - 1) * 100;
+  return { hitProb, payoutIfHit, evPct };
 }
 
 function exactaTakeout(race: Race): number {
@@ -100,15 +95,22 @@ export const exactaOverlayPairStrategy: Strategy = {
     if (b.evPercent < -2) return null;
 
     const takeout = exactaTakeout(race);
-    const stake = 2 * BOX_COMBOS;    // assume $2 base × 2 combos = $4 ticket
-    const jointAB = jointTopTwo(pA, pB);
-    const jointBA = jointTopTwo(pB, pA);
-    const { hitProb, expectedPayout } = estimateBoxPayout(
-      takeout, stake, jointAB, jointBA, a.currentOdds, b.currentOdds,
+    const stake = 2 * BOX_COMBOS;    // $2 base × 2 combos; booker rescales via stakeBasis
+    // Normalize both probability scales across the live field: model truePWin
+    // sums slightly over 1 (it blends the market's takeout-inflated 1/odds),
+    // and raw 1/odds sums to ~1/(1-takeout). Harville needs real-scale probs.
+    const pSum = live.reduce((s, r) => s + (r.truePWin ?? 0), 0);
+    const qSum = live.reduce((s, r) => s + 1 / Math.max(1.2, r.currentOdds), 0);
+    if (pSum <= 0 || qSum <= 0) return null;
+    const nA = pA / pSum, nB = pB / pSum;
+    const qA = (1 / Math.max(1.2, a.currentOdds)) / qSum;
+    const qB = (1 / Math.max(1.2, b.currentOdds)) / qSum;
+    const { hitProb, payoutIfHit, evPct: ev } = estimateBoxPayout(
+      takeout, stake,
+      jointTopTwo(nA, nB), jointTopTwo(nB, nA),
+      jointTopTwo(qA, qB), jointTopTwo(qB, qA),
     );
-    if (hitProb <= 0 || expectedPayout <= stake) return null;
-    const ev = ((expectedPayout - stake) / stake) * 100;
-    if (ev <= 0) return null;
+    if (hitProb <= 0 || ev <= 0) return null;
 
     return {
       selections: [a.program, b.program],
@@ -117,9 +119,10 @@ export const exactaOverlayPairStrategy: Strategy = {
       reason:
         `Exacta box ${a.name}/${b.name} — top-2 trueP ${(pA*100).toFixed(0)}%/${(pB*100).toFixed(0)}% ` +
         `(combined ${((pA+pB)*100).toFixed(0)}%) · est hit ${(hitProb*100).toFixed(1)}% ` +
-        `· est payout $${expectedPayout.toFixed(0)} on $${stake} (paper)`,
+        `· est payout $${payoutIfHit.toFixed(0)} on $${stake} (paper)`,
       confidence: Math.min(0.6, 0.3 + (pA + pB - MIN_COMBINED_TRUEP)),
-      estimatedPayout: expectedPayout,
+      estimatedPayout: payoutIfHit,
+      stakeBasis: stake,
       combos: BOX_COMBOS,
     };
   },

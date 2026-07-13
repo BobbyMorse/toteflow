@@ -23,7 +23,7 @@ import type { Strategy, StrategyConfig, StrategyEvaluation } from "./strategies/
 import { detectCarryovers, type CarryoverOpportunity } from "./carryovers";
 import { decideBetWindow } from "./optimal-timer";
 import { minBaseForWager } from "./wager-minimums";
-import { strategyCalibratedTrueP, validateEVConsistency } from "./strategy-calibration";
+import { strategyCalibratedTrueP, validateEVConsistency, evPercentFromTrueP } from "./strategy-calibration";
 import { strategyAppliesToTrack } from "./track-types";
 
 function phaseOf(race: Race, now: number): Race["phase"] {
@@ -226,7 +226,12 @@ class Engine {
       // cancel an exacta. MISSED (SK or stale feed) still applies to exotics
       // — that's the window genuinely closing, not an EV signal.
       const isExoticInRace = t.type === "EXACTA" || t.type === "TRIFECTA";
-      const decision = decideBetWindow({ race, runner, msToPost });
+      // Pass the staged ticket's strategy-calibrated EV so the timer's
+      // EV-collapse floor checks the number the strategy actually gates on.
+      // Without it the floor falls back to runner.evPercent — the adapter's
+      // raw 0.65-weight blend, ~2× the calibrated EV for tvg-baseline — and
+      // the late-steam abort protection effectively never triggers.
+      const decision = decideBetWindow({ race, runner, msToPost, calibratedEv: t.capturedEV });
       if (decision.status === "MISSED" || (decision.status === "ABORT" && !isExoticInRace)) {
         Tickets.update(t.id, {
           status: "aborted",
@@ -340,10 +345,9 @@ class Engine {
       // Validate that capturedTrueP and liveEv are mathematically consistent.
       // If they diverge significantly, prefer recalculating from the strategy's
       // calibrated values to avoid storing mismatched pairs.
-      const isConsistent = validateEVConsistency(liveTrueP, liveEv, liveOdds, race?.takeout ?? 0.16);
+      const isConsistent = validateEVConsistency(liveTrueP, liveEv, liveOdds, race.takeout > 0 ? race.takeout : 0.16);
       if (!isConsistent && liveTrueP != null && liveOdds) {
-        const { evPercentFromTrueP } = require("./strategy-calibration");
-        const recomputedEV = evPercentFromTrueP(liveTrueP, liveOdds, race?.takeout ?? 0.16);
+        const recomputedEV = evPercentFromTrueP(liveTrueP, liveOdds, race.takeout > 0 ? race.takeout : 0.16);
         this.note(
           `[${t.strategyId ?? "?"}] ⚠ EV consistency check failed on ${t.raceId} #${selection}: ` +
           `trueP ${(liveTrueP * 100).toFixed(1)}% @ ${liveOdds.toFixed(2)} odds → ` +
@@ -587,7 +591,13 @@ class Engine {
     const combos = evaluation.combos ?? legs.reduce((a, l) => a * Math.max(1, l.selections.length), 1);
     const basePrice = cfg.stake;
     const stake = combos * basePrice;
-    const estimatedPayout = evaluation.estimatedPayout ?? 0;
+    // Rescale the strategy's payout estimate to the actual booked stake —
+    // strategies compute it at their own base (e.g. $1 DD), and pari-mutuel
+    // payouts scale linearly with stake.
+    const rawEstPayout = evaluation.estimatedPayout ?? 0;
+    const estimatedPayout = evaluation.stakeBasis && evaluation.stakeBasis > 0
+      ? rawEstPayout * (stake / evaluation.stakeBasis)
+      : rawEstPayout;
     const flatSelections = legs.flatMap(l => l.selections);
 
     const ticket: Ticket = {
@@ -746,7 +756,12 @@ class Engine {
     const isExoticInRace = evaluation.type === "EXACTA" || evaluation.type === "TRIFECTA";
     const exoticCombos = evaluation.combos ?? selections.length;
     const exoticStake = isExoticInRace ? cfg.stake * exoticCombos : 0;
-    const exoticPayout = isExoticInRace ? (evaluation.estimatedPayout ?? 0) : 0;
+    // Rescale payout estimate to the booked stake (see bookMultiLegTicket).
+    const rawExoticPayout = evaluation.estimatedPayout ?? 0;
+    const exoticPayout = !isExoticInRace ? 0
+      : evaluation.stakeBasis && evaluation.stakeBasis > 0
+        ? rawExoticPayout * (exoticStake / evaluation.stakeBasis)
+        : rawExoticPayout;
     // Capture a strategy-calibrated trueP alongside the raw adapter blend so
     // the tickets page can render "model fair" / "live EV" using the same
     // probability the strategy itself is gating on. For strategies that don't
