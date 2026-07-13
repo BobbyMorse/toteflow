@@ -1036,12 +1036,11 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
   const clv = t.type === "WIN" && t.closingOdds && t.capturedOdds
     ? ((t.capturedOdds - t.closingOdds) / t.closingOdds) * 100
     : null;
-  // Validate that capturedEV and capturedTrueP are consistent. If they diverge,
-  // flag the row for manual review since it indicates corrupted data or a calculation bug.
-  const evConsistent = validateEVConsistency(t.capturedTrueP, t.capturedEV, t.capturedOdds, 0.16, 1.5);
+  // Validate that capturedEV and capturedTrueP are consistent.
+  const evConsistent = validateEVConsistency(t.capturedTrueP, t.capturedEV, t.capturedOdds, 0.16, 1.0);
   const evMismatchWarning = !evConsistent && t.capturedTrueP && t.capturedEV && t.capturedOdds
-    ? ` (⚠ Data inconsistency: P=${(t.capturedTrueP * 100).toFixed(1)}% + ${t.capturedOdds.toFixed(2)}x odds don't match ${t.capturedEV.toFixed(1)}% EV)`
-    : "";
+    ? `⚠ Data issue: P=${(t.capturedTrueP * 100).toFixed(1)}% + ${t.capturedOdds.toFixed(2)}x odds ≠ ${t.capturedEV.toFixed(1)}% EV`
+    : null;
   // Closing EV grades the bet WE locked in.
   // - WIN: derive by scaling captured EV by the odds drift (constant-trueP:
   //   same horse, same model probability, just rescaled payout). We prefer

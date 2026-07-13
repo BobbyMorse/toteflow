@@ -43,6 +43,14 @@ function build(id: string, name: string, appliesTo: Discipline[], calibrate: Tru
         const marketP = 1 / Math.max(1.2, r.currentOdds);
         const calibP = calibrate(r.truePWin, marketP);
         const ev = evPercentFromTrueP(calibP, r.currentOdds, takeout);
+        // DEBUG: log the calculation steps
+        if (ev > 0) {
+          console.log(
+            `[${id}] ${r.name}: adapterP=${(r.truePWin * 100).toFixed(1)}% → ` +
+            `calibP=${(calibP * 100).toFixed(1)}% → ` +
+            `EV=${ev.toFixed(1)}% @ ${r.currentOdds.toFixed(2)}x odds`
+          );
+        }
         if (ev > 0 && (best == null || ev > best.ev)) best = { runner: r, ev, trueP: calibP };
       }
       if (!best) return null;
@@ -52,14 +60,20 @@ function build(id: string, name: string, appliesTo: Discipline[], calibrate: Tru
       // like "19.7% → +17.6% @ 3/1 odds" (which is mathematically impossible).
       const recomputedEV = evPercentFromTrueP(best.trueP, best.runner.currentOdds, takeout);
       const evDivergence = Math.abs(recomputedEV - best.ev);
+
+      // DEBUG: log all bets to understand the mismatch
+      if (evDivergence > 2.0) {
+        console.error(
+          `[${this.id}] CRITICAL EV MISMATCH on ${best.runner.name}:\n` +
+          `  Returned: P=${(best.trueP * 100).toFixed(1)}% EV=${best.ev.toFixed(1)}%\n` +
+          `  Recomputed: ${recomputedEV.toFixed(1)}% (divergence: ${evDivergence.toFixed(1)}pp)\n` +
+          `  Odds=${best.runner.currentOdds.toFixed(2)}x takeout=${(takeout * 100).toFixed(0)}%`
+        );
+      }
+
       let finalEV = best.ev;
       if (evDivergence > 2.0) {
         // EV diverges by more than 2pp — recalculate it from the P to ensure consistency.
-        console.warn(
-          `[${this.id}] Corrected EV on ${best.runner.name}: ` +
-          `trueP=${(best.trueP * 100).toFixed(1)}% @ ${best.runner.currentOdds.toFixed(2)}x ` +
-          `was ${best.ev.toFixed(1)}%, recalculated to ${recomputedEV.toFixed(1)}%`
-        );
         finalEV = recomputedEV;
       }
 
