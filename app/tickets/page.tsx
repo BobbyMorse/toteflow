@@ -7,7 +7,7 @@ import { useToteflow } from "@/lib/store";
 import { decideBetWindow, type BetWindowDecision } from "@/lib/optimal-timer";
 import { apiUrl } from "@/lib/api-url";
 import type { AutobookState } from "@/lib/autobook-view";
-import { strategyCalibratedTrueP, evPercentFromTrueP, validateEVConsistency } from "@/lib/strategy-calibration";
+import { strategyCalibratedTrueP, evPercentFromTrueP } from "@/lib/strategy-calibration";
 import Link from "next/link";
 import clsx from "clsx";
 
@@ -1036,11 +1036,12 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
   const clv = t.type === "WIN" && t.closingOdds && t.capturedOdds
     ? ((t.capturedOdds - t.closingOdds) / t.closingOdds) * 100
     : null;
-  // Validate that capturedEV and capturedTrueP are consistent.
-  const evConsistent = validateEVConsistency(t.capturedTrueP, t.capturedEV, t.capturedOdds, 0.16, 1.0);
-  const evMismatchWarning = !evConsistent && t.capturedTrueP && t.capturedEV && t.capturedOdds
-    ? `⚠ Data issue: P=${(t.capturedTrueP * 100).toFixed(1)}% + ${t.capturedOdds.toFixed(2)}x odds ≠ ${t.capturedEV.toFixed(1)}% EV`
-    : null;
+  // NOTE: no client-side P/EV consistency check here. It can't be done
+  // honestly — the fire-time takeout isn't persisted on the ticket, so any
+  // recompute guesses 0.16 and false-flags tracks like Tampa (18.5%) or
+  // Santa Anita (15.43%). It also mis-applied the WIN formula to PLACE/SHOW
+  // (Dr.Z pool math). Capture-time consistency is enforced server-side in
+  // autobook (P and EV paired atomically from the same strategy re-eval).
   // Closing EV grades the bet WE locked in.
   // - WIN: derive by scaling captured EV by the odds drift (constant-trueP:
   //   same horse, same model probability, just rescaled payout). We prefer
@@ -1174,9 +1175,6 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
             {t.reason}
             {t.capturedEV < 0 && (
               <div className="text-accent-steam mt-1">⚠ Fired with negative EV ({t.capturedEV.toFixed(1)}%)</div>
-            )}
-            {evMismatchWarning && (
-              <div className="text-accent-steam mt-1">⚠ {evMismatchWarning}</div>
             )}
           </div>
         )}
