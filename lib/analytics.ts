@@ -31,7 +31,40 @@ export interface StrategyAnalytics {
   // Calibration audit
   predictedPL: number;
   calibrationRatio: number | null;   // actual / predicted
+  // Payout provenance. Exotic wins settled before real-tote grading landed
+  // (payoutSource NULL) or on races with no payoff feed were paid at the
+  // strategy's own book-time estimate — that P/L is directional fiction.
+  // WIN/PLACE/SHOW always settle at real tote prices and are never counted.
+  estPayoutWins: number;             // exotic wins paid at estimated payouts
+  estPayoutPL: number;               // realizedPL carried by those wins
+  // Out-of-sample split for strategies whose calibration was fitted on past
+  // bets (tvg-baseline family). In-sample ROI is curve-fit by construction;
+  // only bets placed AFTER the weight was frozen test the model honestly.
+  oos: {
+    since: number;                   // freeze timestamp (ms epoch)
+    bets: number;
+    settled: number;
+    won: number;
+    staked: number;
+    realizedPL: number;
+    hitRate: number | null;
+    roi: number | null;
+    roiCI95Low: number | null;
+    roiCI95High: number | null;
+  } | null;
 }
+
+// Calibration freeze timestamps. Bets placed at/after these are out-of-sample
+// for the fitted weight; bets before are the fit sample (or pre-fit data).
+//   tvg-baseline:        0.30 re-blend fitted on the 159-bet audit through
+//                        2026-06-29 (predates the repo — see tvg-baseline.ts).
+//   harness/QH variants: 0.15 weight set in commit d9b4228 (2026-07-11) off
+//                        the 68-bet harness audit.
+const CALIBRATION_FREEZE: Record<string, number> = {
+  "tvg-baseline": Date.parse("2026-06-30T00:00:00Z"),
+  "tvg-baseline-harness": Date.parse("2026-07-12T00:44:13Z"),
+  "tvg-baseline-qh": Date.parse("2026-07-12T00:44:13Z"),
+};
 
 export interface DailyPL {
   day: string;        // YYYY-MM-DD
@@ -108,11 +141,67 @@ const Q_STRATEGY = db.prepare(`
       WHEN status IN ('won','lost') AND stake > 0
       THEN (realizedPL / stake) * (realizedPL / stake)
       ELSE 0
-    END)                                                              AS sumRoiSq
+    END)                                                              AS sumRoiSq,
+    SUM(CASE
+      WHEN status = 'won'
+        AND type IN ('EXACTA','TRIFECTA','DD','P3','P4','P5','P6','J6')
+        AND (payoutSource IS NULL OR payoutSource = 'estimated')
+      THEN 1 ELSE 0
+    END)                                                              AS estPayoutWins,
+    SUM(CASE
+      WHEN status = 'won'
+        AND type IN ('EXACTA','TRIFECTA','DD','P3','P4','P5','P6','J6')
+        AND (payoutSource IS NULL OR payoutSource = 'estimated')
+      THEN realizedPL ELSE 0
+    END)                                                              AS estPayoutPL
   FROM tickets
   WHERE strategyId IS NOT NULL
   GROUP BY strategyId
 `);
+
+// Out-of-sample aggregates for one calibrated strategy: bets placed at/after
+// the freeze timestamp only.
+const Q_OOS = db.prepare(`
+  SELECT
+    SUM(CASE WHEN status IN ('open','won','lost') THEN 1 ELSE 0 END)     AS bets,
+    SUM(CASE WHEN status IN ('won','lost') THEN 1 ELSE 0 END)            AS settled,
+    SUM(CASE WHEN status = 'won' THEN 1 ELSE 0 END)                      AS won,
+    SUM(CASE WHEN status IN ('open','won','lost') THEN stake ELSE 0 END) AS staked,
+    SUM(CASE WHEN status IN ('won','lost') THEN realizedPL ELSE 0 END)   AS realizedPL,
+    AVG(CASE WHEN status IN ('won','lost') AND stake > 0 THEN realizedPL / stake END) AS avgRoi,
+    SUM(CASE
+      WHEN status IN ('won','lost') AND stake > 0
+      THEN (realizedPL / stake) * (realizedPL / stake)
+      ELSE 0
+    END)                                                                 AS sumRoiSq
+  FROM tickets
+  WHERE strategyId = ? AND placedAt >= ?
+`);
+
+function oosFor(strategyId: string): StrategyAnalytics["oos"] {
+  const since = CALIBRATION_FREEZE[strategyId];
+  if (!since) return null;
+  const r = Q_OOS.get(strategyId, since) as any;
+  const settled = r?.settled || 0;
+  const avgRoi = r?.avgRoi ?? null;
+  const variance = settled > 1 && avgRoi != null
+    ? Math.max(0, (r.sumRoiSq || 0) / settled - avgRoi * avgRoi)
+    : null;
+  const stdErr = variance != null && settled > 0 ? Math.sqrt(variance / settled) : null;
+  const ci95 = stdErr != null ? 1.96 * stdErr : null;
+  return {
+    since,
+    bets: r?.bets || 0,
+    settled,
+    won: r?.won || 0,
+    staked: r?.staked || 0,
+    realizedPL: r?.realizedPL || 0,
+    hitRate: settled > 0 ? (r.won || 0) / settled : null,
+    roi: r?.staked > 0 ? (r.realizedPL || 0) / r.staked : null,
+    roiCI95Low: avgRoi != null && ci95 != null ? avgRoi - ci95 : null,
+    roiCI95High: avgRoi != null && ci95 != null ? avgRoi + ci95 : null,
+  };
+}
 
 export function strategyAnalytics(): StrategyAnalytics[] {
   const rows = Q_STRATEGY.all() as any[];
@@ -157,6 +246,9 @@ export function strategyAnalytics(): StrategyAnalytics[] {
       confidenceLabel: conf,
       predictedPL: r.predictedPL || 0,
       calibrationRatio: r.predictedPL ? (r.realizedPL || 0) / r.predictedPL : null,
+      estPayoutWins: r.estPayoutWins || 0,
+      estPayoutPL: r.estPayoutPL || 0,
+      oos: oosFor(r.strategyId),
     };
   });
 }

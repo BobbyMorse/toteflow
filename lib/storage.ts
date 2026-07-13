@@ -110,6 +110,7 @@ function rowToTicket(row: any): Ticket {
     closingEVRaw: row.closingEVRaw ?? undefined,
     capturedTrueP: row.capturedTrueP ?? undefined,
     shadow: row.shadow ? true : undefined,
+    payoutSource: row.payoutSource ?? undefined,
     legs: row.legs ? JSON.parse(row.legs) : undefined,
     stagedAt: row.stagedAt ?? undefined,
     abortedAt: row.abortedAt ?? undefined,
@@ -123,13 +124,13 @@ const stmtInsertTicket = db.prepare(`
     stake, potentialPayout, capturedEV, capturedEVRaw, capturedTrueP, capturedOdds, placedAt, postTime,
     status, mode, strategyId, reason, settledAt, realizedPL, winners,
     closingOdds, closingEV, closingEVRaw, shadow, legs,
-    stagedAt, abortedAt, abortReason
+    stagedAt, abortedAt, abortReason, payoutSource
   ) VALUES (
     @id, @raceId, @trackCode, @trackName, @raceNumber, @horseName, @type, @selections,
     @stake, @potentialPayout, @capturedEV, @capturedEVRaw, @capturedTrueP, @capturedOdds, @placedAt, @postTime,
     @status, @mode, @strategyId, @reason, @settledAt, @realizedPL, @winners,
     @closingOdds, @closingEV, @closingEVRaw, @shadow, @legs,
-    @stagedAt, @abortedAt, @abortReason
+    @stagedAt, @abortedAt, @abortReason, @payoutSource
   )
 `);
 
@@ -160,7 +161,8 @@ const stmtUpdateTicket = db.prepare(`
     shadow          = @shadow,
     stagedAt        = @stagedAt,
     abortedAt       = @abortedAt,
-    abortReason     = @abortReason
+    abortReason     = @abortReason,
+    payoutSource    = @payoutSource
   WHERE id = @id
 `);
 
@@ -217,6 +219,7 @@ function ticketToRow(t: Ticket): Record<string, unknown> {
     stagedAt: t.stagedAt ?? null,
     abortedAt: t.abortedAt ?? null,
     abortReason: t.abortReason ?? null,
+    payoutSource: t.payoutSource ?? null,
   };
 }
 

@@ -25,6 +25,20 @@ interface StrategyAnalytics {
   confidenceLabel: "too-small" | "noise" | "edge" | "loss";
   predictedPL: number;
   calibrationRatio: number | null;
+  estPayoutWins: number;
+  estPayoutPL: number;
+  oos: {
+    since: number;
+    bets: number;
+    settled: number;
+    won: number;
+    staked: number;
+    realizedPL: number;
+    hitRate: number | null;
+    roi: number | null;
+    roiCI95Low: number | null;
+    roiCI95High: number | null;
+  } | null;
 }
 
 interface DailyPL {
@@ -418,6 +432,38 @@ function StrategyCard({ s, kind }: { s: StrategyAnalytics; kind: "working" | "lo
             {s.avgCapturedEV != null && s.avgClosingEV != null && <> · </>}
             {s.avgClosingEV != null && (
               <>close EV <span className={closeCls}>{s.avgClosingEV >= 0 ? "+" : ""}{s.avgClosingEV.toFixed(1)}%</span></>
+            )}
+          </div>
+        )}
+        {/* Payout provenance warning: exotic wins paid at the strategy's own
+            estimated payout, not real tote prices. That P/L is unverified. */}
+        {s.estPayoutWins > 0 && (
+          <div className="text-[10px] sm:text-[11px] mt-0.5 text-accent-warn"
+            title="Exotic wins settled at the strategy's own estimated payout (real tote payoff unavailable at settle time). Treat this portion of P/L as unverified.">
+            ⚠ {s.estPayoutWins} win{s.estPayoutWins === 1 ? "" : "s"} at est. payout
+            ({s.estPayoutPL >= 0 ? "+" : ""}${s.estPayoutPL.toFixed(0)} unverified)
+          </div>
+        )}
+        {/* Out-of-sample verdict: bets placed after the calibration weight was
+            frozen. In-sample ROI is curve-fit by construction — this line is
+            the honest test. */}
+        {s.oos && (
+          <div className="text-[10px] sm:text-[11px] mt-0.5 text-ink-2"
+            title={`Calibration weight frozen ${new Date(s.oos.since).toLocaleDateString()}. Bets placed after that date are the honest out-of-sample test — in-sample ROI was fitted on its own data.`}>
+            <span className="font-semibold text-accent-cyan">OOS</span> since {new Date(s.oos.since).toLocaleDateString([], { month: "short", day: "numeric" })}:{" "}
+            {s.oos.settled === 0 ? (
+              <span>no settled bets yet</span>
+            ) : (
+              <>
+                <span className={clsx("font-mono font-semibold",
+                  (s.oos.roi ?? 0) >= 0 ? "text-accent-overlay" : "text-accent-steam")}>
+                  {s.oos.roi == null ? "—" : `${s.oos.roi >= 0 ? "+" : ""}${(s.oos.roi * 100).toFixed(1)}%`}
+                </span>
+                {" "}over {s.oos.settled} settled
+                {s.oos.roiCI95Low != null && s.oos.roiCI95High != null && (
+                  <span className="font-mono"> [{(s.oos.roiCI95Low * 100).toFixed(0)}, {(s.oos.roiCI95High * 100).toFixed(0)}]</span>
+                )}
+              </>
             )}
           </div>
         )}
