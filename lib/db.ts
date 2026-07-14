@@ -117,6 +117,48 @@ function applySchema(db: Database.Database): void {
       stake         REAL NOT NULL,
       fireAtPhase   TEXT NOT NULL
     );
+
+    -- Per-runner closing snapshots for EVERY race we watch (not just races we
+    -- bet). One row per (raceId, day, program), upserted while the race
+    -- approaches post so the final write is the closing state; the grader
+    -- stamps finishPosition + real payoffs when the result arrives. This is
+    -- the model-calibration training set: (model P, market odds, outcome)
+    -- across the whole field, free of bet-selection bias. TVG reuses raceIds
+    -- (e.g. TVG-CBY-1) across days, hence the day key.
+    CREATE TABLE IF NOT EXISTS runner_snapshots (
+      raceId          TEXT NOT NULL,
+      day             TEXT NOT NULL,
+      program         TEXT NOT NULL,
+      trackCode       TEXT,
+      raceNumber      INTEGER,
+      trackType       TEXT,
+      surface         TEXT,
+      distance        TEXT,
+      modelQuality    TEXT,
+      fieldSize       INTEGER,
+      postTime        INTEGER,
+      capturedAt      INTEGER NOT NULL,
+      odds            REAL,
+      morningLine     REAL,
+      truePWin        REAL,
+      evPercent       REAL,
+      winPoolAmount   REAL,
+      placePoolAmount REAL,
+      showPoolAmount  REAL,
+      winPoolTotal    REAL,
+      placePoolTotal  REAL,
+      showPoolTotal   REAL,
+      takeout         REAL,
+      scratched       INTEGER NOT NULL DEFAULT 0,
+      finishPosition  INTEGER,
+      winPayoff       REAL,
+      placePayoff     REAL,
+      showPayoff      REAL,
+      settledAt       INTEGER,
+      PRIMARY KEY (raceId, day, program)
+    );
+    CREATE INDEX IF NOT EXISTS idx_snaps_captured ON runner_snapshots(capturedAt);
+    CREATE INDEX IF NOT EXISTS idx_snaps_settled  ON runner_snapshots(settledAt);
   `);
 
   // Idempotent column adds for tables that pre-date a column.

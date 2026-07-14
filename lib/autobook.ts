@@ -26,6 +26,7 @@ import { minBaseForWager } from "./wager-minimums";
 import { strategyCalibratedTrueP, validateEVConsistency, evPercentFromTrueP } from "./strategy-calibration";
 import { strategyAppliesToTrack } from "./track-types";
 import { winnerOddsDriftFactor } from "./odds-drift";
+import { persistClosingSnapshot } from "./runner-snapshots";
 
 function phaseOf(race: Race, now: number): Race["phase"] {
   const ms = race.postTime - now;
@@ -669,6 +670,9 @@ class Engine {
     const placeEv = computePlaceEVs(race);
     const placeEvOrNone = Object.keys(placeEv).length ? placeEv : undefined;
     Closing.snapshot(race.id, odds, ev, evRaw, placeEvOrNone);
+    // Persist the whole field to SQLite (throttled, closing window only) —
+    // the calibration training set. See lib/runner-snapshots.ts.
+    persistClosingSnapshot(race);
   }
 
   private considerStrategy(strategy: Strategy, race: Race, now: number): "staged" | "pivoted" | "refreshed" | "matched" | "below-threshold" | "skipped" {

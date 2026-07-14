@@ -4,6 +4,7 @@
 // track-bias) have a shared history to query.
 import { Tickets, Closing, deriveClosingEV } from "./storage";
 import { RaceResults } from "./race-results";
+import { stampSnapshotResults, purgeUnstampedSnapshots } from "./runner-snapshots";
 import type { Ticket } from "./types";
 
 const ENDPOINT = "https://service.tvg.com/graph/v2/query";
@@ -124,7 +125,7 @@ function isScratched(rn: TvgResultRunner | undefined): boolean {
 class Grader {
   // Marker bumped whenever settle logic adds new ticket types — read by the
   // HMR staleness check below so dev reloads pick up the new settle paths.
-  readonly version = 5;
+  readonly version = 6;
   started = false;
   lastTick = 0;
   inFlight: Promise<void> | null = null;
@@ -182,11 +183,14 @@ class Grader {
 
       // Push every observed final race into RaceResults so same-day strategies
       // (track-bias) have a shared history to query. Idempotent — record()
-      // skips keys that already exist.
+      // skips keys that already exist. Also stamp finish + real payoffs onto
+      // the persisted runner snapshots (the calibration training set).
+      purgeUnstampedSnapshots();
       for (const r of races) {
         const isFinal = ["RO", "MO"].includes(r.status?.code ?? "");
         if (!isFinal) continue;
         const runners = r.results?.runners ?? [];
+        if (runners.length) stampSnapshotResults(`TVG-${r.id}`, runners);
         const finishers = runners
           .filter(rn => rn.finishPosition && rn.finishPosition <= 4)
           .sort((a, b) => (a.finishPosition ?? 99) - (b.finishPosition ?? 99))
@@ -536,7 +540,7 @@ const cachedGrader = globalThis.__toteflowGrader;
 const graderStale = !!cachedGrader && (
   typeof (cachedGrader as any).settlePickN !== "function" ||
   typeof (cachedGrader as any).sweepStaleOpen !== "function" ||
-  ((cachedGrader as any).version ?? 0) < 5
+  ((cachedGrader as any).version ?? 0) < 6
 );
 export const grader = (cachedGrader && !graderStale)
   ? cachedGrader
