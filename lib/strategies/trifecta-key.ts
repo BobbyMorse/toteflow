@@ -1,5 +1,6 @@
 import type { Strategy, StrategyEvaluation } from "./types";
 import type { Race } from "../types";
+import { sternHarville } from "../harville";
 
 // Trifecta — top-3 box of the model's strongest contenders. The thesis:
 // when the model has high quality and 3 horses meaningfully separate
@@ -22,18 +23,6 @@ const MIN_TOP3_COMBINED_TRUEP = 0.65;
 const MIN_INDIVIDUAL_TRUEP = 0.10;
 const TRIFECTA_TAKEOUT_FALLBACK = 0.22;
 const BOX_COMBOS = 6;              // 3-horse box = 6 orderings
-
-// Harville top-3 joint probability for ordered triple (i,j,k):
-//   P(i 1st, j 2nd, k 3rd) = p_i * (p_j / (1 - p_i)) * (p_k / (1 - p_i - p_j))
-function jointTopThree(pI: number, pJ: number, pK: number): number {
-  if (pI <= 0 || pJ <= 0 || pK <= 0) return 0;
-  if (pI >= 1) return 0;
-  const denom2 = 1 - pI;
-  if (denom2 <= 0) return 0;
-  const denom3 = 1 - pI - pJ;
-  if (denom3 <= 0) return 0;
-  return pI * (pJ / denom2) * (pK / denom3);
-}
 
 function trifectaTakeout(race: Race): number {
   return race.poolTakeout?.exotic ?? TRIFECTA_TAKEOUT_FALLBACK;
@@ -72,19 +61,25 @@ export const trifectaKeyStrategy: Strategy = {
     // beat exotic takeout (>= 0.19 at every US track) — the strategy was
     // mathematically unable to fire. Before that, treating the whole pool
     // as one combo's payout produced 10,000%+ EVs. Both wrong.
+    // Stern-discounted Harville (lib/harville.ts) over the WHOLE live field —
+    // raw Harville overrated favorite-heavy triples on both the model (hit
+    // prob) and market (payout) side of the ratio.
     const pSum = live.reduce((s, r) => s + (r.truePWin ?? 0), 0);
     const qSum = live.reduce((s, r) => s + 1 / Math.max(1.2, r.currentOdds), 0);
     if (pSum <= 0 || qSum <= 0) return null;
-    const ps = [pA / pSum, pB / pSum, pC / pSum];
-    const qs = [a, b, c].map(r => (1 / Math.max(1.2, r.currentOdds)) / qSum);
+    const psN = live.map(r => (r.truePWin ?? 0) / pSum);
+    const qsN = live.map(r => (1 / Math.max(1.2, r.currentOdds)) / qSum);
+    const model = sternHarville(psN);
+    const market = sternHarville(qsN);
+    const idx = [live.indexOf(a), live.indexOf(b), live.indexOf(c)];
 
     let hitProb = 0;
     let expectedReturn = 0;   // probability-weighted payout per $1 of ticket
     const perCombo = 1 / BOX_COMBOS;
     for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) {
       if (i === j || j === k || i === k) continue;
-      const pO = jointTopThree(ps[i], ps[j], ps[k]);
-      const qO = jointTopThree(qs[i], qs[j], qs[k]);
+      const pO = model.triple(idx[i], idx[j], idx[k]);
+      const qO = market.triple(idx[i], idx[j], idx[k]);
       if (qO <= 0) continue;
       hitProb += pO;
       expectedReturn += pO * perCombo * (1 - takeout) / qO;

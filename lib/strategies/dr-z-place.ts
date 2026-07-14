@@ -24,6 +24,14 @@ import type { Race, Runner } from "../types";
 const MIN_SECONDS_TO_POST = 15;
 const MIN_FIELD = 5;
 const MIN_PLACE_POOL = 5_000;          // need real liquidity for breakage math
+// Ziemba's published system only bets well-backed horses (his cutoff was a
+// win-pool probability around 0.15+). Two reasons: the place-pool
+// inefficiency is empirically reliable on horses the crowd trusts to win but
+// under-bets to place, and the Harville/Stern top-2 estimate is most accurate
+// for high-probability runners — a longshot "edge" is usually pool noise, not
+// mispricing. Gate applies to bet ENTRY only; closing-EV display still
+// computes for the whole field.
+const MIN_WIN_SHARE = 0.15;
 // PLACE pool takeout: prefer the adapter's per-track value
 // (race.poolTakeout.place). Falls back to race.takeout + 2pt premium, then
 // to a flat US-average if neither is available.
@@ -185,8 +193,11 @@ export const drZPlaceStrategy: Strategy = {
 
     const placePool = race.placePoolTotal ?? 0;
     const takeout = placeTakeout(race);
+    const winShares = poolShares(live, "winPoolAmount");
+    if (!winShares) return null;
     let best: { runner: Runner; ev: number } | null = null;
     for (const r of live) {
+      if ((winShares.get(r.program) ?? 0) < MIN_WIN_SHARE) continue;
       const ev = evPlace(r, live, placePool, takeout);
       if (ev == null) continue;
       if (!best || ev > best.ev) best = { runner: r, ev };

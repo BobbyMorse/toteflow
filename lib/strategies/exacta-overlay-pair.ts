@@ -1,5 +1,6 @@
 import type { Strategy, StrategyEvaluation } from "./types";
 import type { Race } from "../types";
+import { sternHarville } from "../harville";
 
 // Exacta box of the model's top two contenders, fired only when both horses
 // are real value plays (positive WIN-pool EV) and both clearly outrun the
@@ -21,13 +22,6 @@ const MIN_COMBINED_TRUEP = 0.55;   // top-2 must dominate the field
 const MIN_INDIVIDUAL_TRUEP = 0.20;
 const EXACTA_TAKEOUT_FALLBACK = 0.20;
 const BOX_COMBOS = 2;              // 2-horse box = 2 ordered permutations
-
-// Harville top-2 joint probability for an ordered pair (i first, j second).
-// P(i 1st AND j 2nd) = p_i * p_j / (1 - p_i)
-function jointTopTwo(pI: number, pJ: number): number {
-  if (pI <= 0 || pJ <= 0 || pI >= 1) return 0;
-  return (pI * pJ) / Math.max(0.001, 1 - pI);
-}
 
 // Model-vs-market exacta box math. We don't have per-combo exacta pool data,
 // so we assume the public prices each ordered combo at its MARKET-implied
@@ -98,17 +92,21 @@ export const exactaOverlayPairStrategy: Strategy = {
     const stake = 2 * BOX_COMBOS;    // $2 base × 2 combos; booker rescales via stakeBasis
     // Normalize both probability scales across the live field: model truePWin
     // sums slightly over 1 (it blends the market's takeout-inflated 1/odds),
-    // and raw 1/odds sums to ~1/(1-takeout). Harville needs real-scale probs.
+    // and raw 1/odds sums to ~1/(1-takeout). The Stern-discounted Harville
+    // (lib/harville.ts) needs real-scale probs over the WHOLE field — raw
+    // Harville overrated favorite-heavy combos on both sides of the ratio.
     const pSum = live.reduce((s, r) => s + (r.truePWin ?? 0), 0);
     const qSum = live.reduce((s, r) => s + 1 / Math.max(1.2, r.currentOdds), 0);
     if (pSum <= 0 || qSum <= 0) return null;
-    const nA = pA / pSum, nB = pB / pSum;
-    const qA = (1 / Math.max(1.2, a.currentOdds)) / qSum;
-    const qB = (1 / Math.max(1.2, b.currentOdds)) / qSum;
+    const psN = live.map(r => (r.truePWin ?? 0) / pSum);
+    const qsN = live.map(r => (1 / Math.max(1.2, r.currentOdds)) / qSum);
+    const model = sternHarville(psN);
+    const market = sternHarville(qsN);
+    const iA = live.indexOf(a), iB = live.indexOf(b);
     const { hitProb, payoutIfHit, evPct: ev } = estimateBoxPayout(
       takeout, stake,
-      jointTopTwo(nA, nB), jointTopTwo(nB, nA),
-      jointTopTwo(qA, qB), jointTopTwo(qB, qA),
+      model.pair(iA, iB), model.pair(iB, iA),
+      market.pair(iA, iB), market.pair(iB, iA),
     );
     if (hitProb <= 0 || ev <= 0) return null;
 
