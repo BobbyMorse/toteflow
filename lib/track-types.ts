@@ -8,7 +8,7 @@ export type TrackType =
   | "thoroughbred-international"  // GB/IE/FR/AU flat thoroughbred — TVG/FanDuel carries it via commingled pools
   | "harness"                     // NFL, POC, OCD — standardbreds
   | "quarter-horse"               // LA, RD — different breed, short sprints
-  | "international"               // jumps tracks + non-thoroughbred international — skip
+  | "international"               // jumps tracks + unclassifiable international — skip
   | "unknown";
 
 const THOROUGHBRED_MAJOR = new Set([
@@ -52,22 +52,38 @@ const INTERNATIONAL_JUMPS_NAMES = new Set([
   "auteuil",
 ]);
 
+const FLAT_THOROUGHBRED_COUNTRIES = new Set([
+  "GB","IE","FR","AU","JP","HK","SG","UAE","SA","NZ","CA","DE","IT",
+  // Flat jurisdictions TVG carries that used to fall into the skip bucket
+  // (ZA - Durbanville, BR - Gavea, CL - Club Hipico Concepcion, etc.).
+  "ZA","BR","CL","AR","UY","PE","KR","MX",
+]);
+
+// Countries whose TVG meets are trot (standardbred) racing — same discipline
+// as US harness, so harness strategies get them instead of a blanket skip.
+const TROT_COUNTRIES = new Set(["SE","NO","DK","FI"]);
+
+// France is in the flat whitelist, but these venues are trot-only — without
+// this carve-out thoroughbred strategies would fire on trot races.
+const FRENCH_TROT_NAMES = new Set([
+  "vincennes","enghien","cabourg","caen","laval",
+]);
+
 export function classifyTrack(trackCode: string, trackName?: string): TrackType {
   const code = trackCode.toUpperCase();
   const name = (trackName ?? "").toLowerCase();
 
   // International prefixes from TVG's naming: "GB - ", "AU - ", "JP - ", etc.
-  // We split these into flat (bet-eligible — TVG/FanDuel commingles pools and
-  // the model often reads them well) and jumps (skip — different discipline).
-  // Names like "NO - Bergen" (Scandinavian harness/trot) don't match a
-  // thoroughbred country code, so they fall to plain "international".
+  // Three-way split: flat thoroughbred (bet-eligible — TVG/FanDuel commingles
+  // pools and the model often reads them well), trot (standardbred — routed to
+  // the harness strategy group, same discipline as US harness), and jumps
+  // (skip — the flat model can't read falls/refusals/soft going).
   const intlMatch = (trackName ?? "").match(/^([A-Z]{2})\s*-\s*(.+)$/);
   if (intlMatch) {
     const country = intlMatch[1].toUpperCase();
     const trackOnly = intlMatch[2].trim().toLowerCase();
-    const FLAT_THOROUGHBRED_COUNTRIES = new Set([
-      "GB","IE","FR","AU","JP","HK","SG","UAE","SA","NZ","CA","DE","IT",
-    ]);
+    if (TROT_COUNTRIES.has(country)) return "harness";
+    if (country === "FR" && FRENCH_TROT_NAMES.has(trackOnly)) return "harness";
     if (!FLAT_THOROUGHBRED_COUNTRIES.has(country)) return "international";
     if (INTERNATIONAL_JUMPS_NAMES.has(trackOnly)) return "international";
     return "thoroughbred-international";
