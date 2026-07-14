@@ -22,7 +22,14 @@ function openDb(): Database.Database {
     const db = new Database(file);
     db.pragma("busy_timeout = 30000");
     db.pragma("journal_mode = WAL");
-    db.pragma("synchronous = NORMAL");
+    // FULL, not NORMAL: with NORMAL, WAL commits sit in the OS page cache
+    // until a checkpoint and are LOST if the machine stops abruptly. This is
+    // exactly what happened on 2026-07-13: a Fly deploy killed the machine
+    // and every promote/settle written in the prior 80 minutes evaporated,
+    // reverting settled winners to staged (then aborted-as-missed on boot).
+    // FULL fsyncs the WAL on every commit — our write rate (ticket updates +
+    // batched snapshot upserts) is far below what this costs anything.
+    db.pragma("synchronous = FULL");
     db.pragma("foreign_keys = ON");
     applySchema(db);
     return db;
@@ -221,9 +228,16 @@ withDbLock(ensureDataDir(), () => applySchema(db));
 // MaxListenersExceededWarning (and eventually crash the dev server).
 if (typeof process !== "undefined" && !globalThis.__toteflowDbSignalsBound) {
   globalThis.__toteflowDbSignalsBound = true;
-  for (const sig of ["SIGINT", "SIGTERM", "beforeExit"] as const) {
+  for (const sig of ["SIGINT", "SIGTERM"] as const) {
     process.on(sig, () => {
       try { globalThis.__toteflowDb?.close(); } catch {}
+      // Exit NOW. Registering a signal handler suppresses Node's default
+      // exit; without this the process lingers with a closed DB until Fly's
+      // kill_timeout SIGKILLs it — and any tick in that window throws.
+      process.exit(0);
     });
   }
+  process.on("beforeExit", () => {
+    try { globalThis.__toteflowDb?.close(); } catch {}
+  });
 }

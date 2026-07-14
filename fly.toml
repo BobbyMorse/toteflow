@@ -5,6 +5,11 @@
 
 app = 'toteflow'
 primary_region = 'sjc'
+# Give the node process time to close SQLite cleanly on deploys. The default
+# 5s window contributed to the 2026-07-13 data loss (machine killed before
+# WAL writes reached disk).
+kill_signal = 'SIGINT'
+kill_timeout = '30s'
 
 [build]
 
