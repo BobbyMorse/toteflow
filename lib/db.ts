@@ -29,6 +29,9 @@ function openDb(): Database.Database {
     // reverting settled winners to staged (then aborted-as-missed on boot).
     // FULL fsyncs the WAL on every commit — our write rate (ticket updates +
     // batched snapshot upserts) is far below what this costs anything.
+    // Post-mortem correction (2026-07-14): the 7/13 "WAL loss" was actually
+    // Tickets.update() throwing on a missing @payoutSource bind — the writes
+    // never happened at all. FULL stays anyway as cheap insurance.
     db.pragma("synchronous = FULL");
     db.pragma("foreign_keys = ON");
     applySchema(db);

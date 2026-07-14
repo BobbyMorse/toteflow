@@ -114,7 +114,13 @@ class Engine {
     if (now - this.lastTick < this.intervalMs) return;
     if (this.inFlight) return this.inFlight;
     this.lastTick = now;
-    this.inFlight = this.tick().finally(() => { this.inFlight = null; });
+    // Surface tick failures in the engine log. Callers `void` this promise, so
+    // without the catch an exception anywhere in tick() (e.g. a persistence
+    // error mid-promote) becomes an invisible unhandled rejection and the
+    // engine appears healthy while doing nothing.
+    this.inFlight = this.tick()
+      .catch(e => { this.note(`tick error: ${(e as Error).message}`); })
+      .finally(() => { this.inFlight = null; });
     return this.inFlight;
   }
 

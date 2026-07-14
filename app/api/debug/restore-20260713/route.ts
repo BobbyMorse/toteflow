@@ -7,16 +7,25 @@ export const dynamic = "force-dynamic";
 
 // ONE-SHOT RESTORE — delete this route after it has run.
 //
-// The 2026-07-13 deploy killed the machine before SQLite WAL writes reached
-// disk (synchronous=NORMAL): every promote + settlement from ~23:52Z to
-// ~01:12Z was lost, reverting settled tickets to their staged state, which
-// the next boot then aborted as "missed". The settled outcomes below were
-// reconstructed from the tickets-page UI (screenshots taken 2026-07-14
-// 01:08Z, before the losing deploy). settledAt values are approximate
-// (placedAt + 6 min). Two tickets that were still OPEN in the record have
-// unknown outcomes and are restored as void — we will not guess results.
+// Post-mortem correction (2026-07-14): the writes weren't lost WAL. Since the
+// c4acf60 deploy (23:50Z), Tickets.update() threw RangeError on a missing
+// @payoutSource bind — every promote/abort/settle mutated in-memory state and
+// then died before the DB write. Restarts (deploys) reverted everything to
+// the last persisted state. Fixed in 86ab0e9; this route replays the known
+// outcomes.
 //
-// Idempotent: each row is only touched while its status is still "aborted".
+// Batch 1 (23:52Z–01:12Z): reconstructed from tickets-page UI screenshots
+// taken 2026-07-14 01:08Z. settledAt values are approximate (placedAt +
+// 6 min). Two tickets that were still OPEN in the record have unknown
+// outcomes and are restored as void — we will not guess results.
+//
+// Batch 2 (01:25Z–08:28Z): the overnight process memory-settled 8 more
+// tickets before the 11:17Z deploy wiped it. Recovered verbatim from the
+// in-memory CSV export (prod_tickets.csv, exported ~11:00Z) — grader-computed
+// values, not guesses.
+//
+// Idempotent: rows are only touched while their status is a pre-restore state
+// (staged / aborted / open / void) — never over an already-restored won/lost.
 
 const RESTORE_NOTE = "restored 2026-07-14 from UI record after deploy WAL data loss";
 
@@ -104,6 +113,64 @@ const RESTORES: Restore[] = [
     placedAt: T("2026-07-14T01:08:01Z"), settledAt: T("2026-07-14T09:00:00Z"),
     abortReason: `result unknown — settlement lost in deploy data loss; voided (${RESTORE_NOTE})`,
   }},
+
+  // ---- Batch 2: memory-settled overnight, recovered from prod_tickets.csv ----
+  { id: "auto_tvg-baseline-harness_1783985580204_87js", patch: {   // Beach Keepers WBS R4 WIN #7 (DB-open "1 fired")
+    status: "lost", stake: 20, capturedOdds: 10.0,
+    capturedEV: 6.48, potentialPayout: 200,
+    realizedPL: -20.00, winners: ["6", "3", "2", "8"],
+    placedAt: T("2026-07-13T23:38:00.786Z"), settledAt: T("2026-07-14T01:26:11.543Z"),
+    abortedAt: undefined, abortReason: undefined,
+  }},
+  { id: "auto_tvg-baseline-harness_1783986317393_1ud5", patch: {   // Ionian Hanover NFL R6 WIN #5
+    status: "lost", stake: 20, capturedOdds: 6.0,
+    capturedEV: 34.08, potentialPayout: 120,
+    realizedPL: -20.00, winners: ["3", "4", "2", "1"],
+    placedAt: T("2026-07-13T23:50:01.970Z"), settledAt: T("2026-07-14T01:25:41.969Z"),
+    abortedAt: undefined, abortReason: undefined,
+  }},
+  { id: "auto_dd-consensus_1783992383812_zgq1", patch: {           // DD L05 R1-R2 8/7 — WON, real tote payout
+    status: "won", stake: 1, capturedOdds: 0,
+    capturedEV: 112.95, potentialPayout: 14.79,
+    realizedPL: 3.90, payoutSource: "tote", winners: ["8", "7"],
+    placedAt: T("2026-07-14T01:26:23.812Z"), settledAt: T("2026-07-14T02:58:14.591Z"),
+    abortedAt: undefined, abortReason: undefined,
+  }},
+  { id: "auto_track-bias-harness_1783992438783_0i8i", patch: {     // Chow For Now WBS R8 WIN #8
+    status: "lost", stake: 20, capturedOdds: 20.0, closingOdds: 26.0,
+    capturedEV: 6.33, potentialPayout: 400,
+    realizedPL: -20.00, winners: ["5", "1", "2", "7"],
+    placedAt: T("2026-07-14T01:29:01.071Z"), settledAt: T("2026-07-14T01:44:11.911Z"),
+    abortedAt: undefined, abortReason: undefined,
+  }},
+  { id: "auto_tvg-baseline-harness_1783993464164_0aui", patch: {   // Mayhem Like Me OCD R11 WIN #1
+    status: "lost", stake: 20, capturedOdds: 34.0, closingOdds: 3.0,
+    capturedEV: 81.23, potentialPayout: 680,
+    realizedPL: -20.00, winners: ["4", "1", "7", "2"],
+    placedAt: T("2026-07-14T01:46:00.578Z"), settledAt: T("2026-07-14T02:00:42.310Z"),
+    abortedAt: undefined, abortReason: undefined,
+  }},
+  { id: "auto_track-bias-harness_1783995690175_4dzc", patch: {     // Tactical Strike WBS R10 WIN #9
+    status: "lost", stake: 20, capturedOdds: 12.0, closingOdds: 28.0,
+    capturedEV: 8.97, potentialPayout: 240,
+    realizedPL: -20.00, winners: ["4", "2", "3", "5"],
+    placedAt: T("2026-07-14T02:25:58.411Z"), settledAt: T("2026-07-14T02:40:43.627Z"),
+    abortedAt: undefined, abortReason: undefined,
+  }},
+  { id: "auto_track-bias-harness_1784000032265_xows", patch: {     // Vel Mr Steve NFL R16 WIN #4
+    status: "lost", stake: 20, capturedOdds: 23.0, closingOdds: 12.0,
+    capturedEV: 14.14, potentialPayout: 460,
+    realizedPL: -20.00, winners: ["1", "9", "3", "4"],
+    placedAt: T("2026-07-14T03:35:02.713Z"), settledAt: T("2026-07-14T03:51:46.455Z"),
+    abortedAt: undefined, abortReason: undefined,
+  }},
+  { id: "auto_trifecta-key_1784016460551_cxrc", patch: {           // Trifecta box 11/9/2 JP4 R8 (the "mobile trifecta")
+    status: "lost", stake: 3, capturedOdds: 2.2, closingOdds: 1.6,
+    capturedEV: 11.87, potentialPayout: 45.13,
+    realizedPL: -3.00, winners: ["8", "11", "10", "5"],
+    placedAt: T("2026-07-14T08:10:01.787Z"), settledAt: T("2026-07-14T08:27:55.701Z"),
+    abortedAt: undefined, abortReason: undefined,
+  }},
 ];
 
 const stmtAppendReason = db.prepare("UPDATE tickets SET reason = ? WHERE id = ?");
@@ -117,11 +184,12 @@ export async function POST(req: Request) {
   for (const { id, patch } of RESTORES) {
     const t = Tickets.byId(id);
     if (!t) { results.push({ id, outcome: "NOT FOUND" }); continue; }
-    // The v44 deploy revealed the rows had reverted further — to staged —
-    // because v43's boot-time abort writes were themselves lost WAL entries.
-    // Accept either pre-restore state; the guard still prevents re-running
-    // over restored (won/lost/void) rows.
-    if (t.status !== "aborted" && t.status !== "staged") { results.push({ id, outcome: `skipped (status=${t.status})` }); continue; }
+    // Accept any pre-restore state. Rows can be staged (persisted stage,
+    // updates threw ever after), aborted (pre-bug aborts), open (promote
+    // persisted pre-bug, settle lost — e.g. Beach Keepers, the DD), or void
+    // (janitor swept a stale open before this ran). The guard only refuses
+    // to overwrite a row that already carries a restored final outcome.
+    if (t.status === "won" || t.status === "lost") { results.push({ id, outcome: `skipped (status=${t.status})` }); continue; }
     Tickets.update(id, patch);
     // reason isn't covered by the shared UPDATE statement — persist directly.
     const newReason = `${t.reason ?? ""} · ${RESTORE_NOTE}`.trim();
