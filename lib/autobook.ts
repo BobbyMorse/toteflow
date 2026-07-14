@@ -25,7 +25,6 @@ import { decideBetWindow } from "./optimal-timer";
 import { minBaseForWager } from "./wager-minimums";
 import { strategyCalibratedTrueP, validateEVConsistency, evPercentFromTrueP } from "./strategy-calibration";
 import { strategyAppliesToTrack } from "./track-types";
-import { winnerOddsDriftFactor } from "./odds-drift";
 import { persistClosingSnapshot } from "./runner-snapshots";
 
 function phaseOf(race: Race, now: number): Race["phase"] {
@@ -339,33 +338,24 @@ class Engine {
       // match time and fire. Pick-N exotics (tracked separately above) skip this check
       // since their EV is computed at book time against exotic-pool assumptions.
       //
-      // WIN bets gate on a DRIFT-ADJUSTED EV: winners' odds empirically shorten
-      // ~20% between fire and close (late smart money lands on our picks) and
-      // pari-mutuel pays the closing price, so EV at fire-time odds overstates
-      // what a winning bet returns. Re-price at the odds we'd realistically be
-      // paid (per-strategy median winner drift, lib/odds-drift.ts) before
-      // deciding to fire. capturedEV still stores the unadjusted value so the
-      // (trueP, odds, EV) triple stays internally consistent.
+      // NOTE (2026-07-14): a drift-adjusted gate briefly re-priced WIN bets at
+      // median winner-crush odds (winners close ~0.6× fire odds) before firing.
+      // Removed after simulating it against every settled WIN ticket: the cohort
+      // it would have BLOCKED realized +11.9% ROI on tvg-baseline — including
+      // all 49 of its winners — while the cohort it PASSED went 0-for-19 at
+      // -100% ROI. An EV big enough to survive a 0.6× odds haircut selects for
+      // extreme model-market divergence, i.e. model noise. The crush is already
+      // priced in once: the 0.30 calibration weight was fitted against realized
+      // closing-price payoffs. Keep lib/odds-drift.ts for analysis, not gating.
       const EV_FIRE_FLOOR = 0;
-      let gateEv = liveEv;
-      if (t.type === "WIN" && liveTrueP != null) {
-        const drift = winnerOddsDriftFactor(t.strategyId);
-        if (drift < 1) {
-          const adjOdds = Math.max(1.05, liveOdds * drift);
-          gateEv = evPercentFromTrueP(liveTrueP, adjOdds, race.takeout > 0 ? race.takeout : 0.16);
-        }
-      }
-      if (gateEv < EV_FIRE_FLOOR) {
-        const driftNote = gateEv !== liveEv
-          ? `drift-adj EV ${gateEv.toFixed(1)}% (raw ${liveEv.toFixed(1)}% at fire odds)`
-          : `negative EV at fire (${liveEv.toFixed(1)}%)`;
+      if (liveEv < EV_FIRE_FLOOR) {
         Tickets.update(t.id, {
           status: "aborted",
           abortedAt: now,
-          abortReason: `${driftNote} < ${EV_FIRE_FLOOR}%`,
+          abortReason: `negative EV at fire (${liveEv.toFixed(1)}%) < ${EV_FIRE_FLOOR}%`,
         });
         aborted++;
-        this.note(`[${t.strategyId ?? "?"}] ABORT ${t.raceId} #${selection} · ${driftNote}`);
+        this.note(`[${t.strategyId ?? "?"}] ABORT ${t.raceId} #${selection} · negative EV at fire (${liveEv.toFixed(1)}%)`);
         continue;
       }
 
