@@ -223,6 +223,22 @@ function ticketToRow(t: Ticket): Record<string, unknown> {
   };
 }
 
+// Discipline variants ("-harness"/"-qh"/"-jumps") inherit their base
+// strategy's default config — same code, same wager shape, so the same stake
+// semantics. Without this, exotic variants fell back to the generic
+// { stake: 20 } and booked $120 trifecta boxes where the base books $3
+// ($0.50/combo), and carryover variants fired at +5% edge where the base's
+// threshold means "min +30% raw edge".
+const VARIANT_SUFFIX_RE = /-(harness|qh|jumps)$/;
+function defaultConfigFor(id: string): StrategyConfig {
+  const direct = defaultPerStrategy[id];
+  if (direct) return { ...direct };
+  const baseId = id.replace(VARIANT_SUFFIX_RE, "");
+  const base = baseId !== id ? defaultPerStrategy[baseId] : undefined;
+  if (base) return { ...base };
+  return { enabled: false, evThreshold: 5, stake: 20, fireAtPhase: "action" };
+}
+
 function configToRow(id: string, c: StrategyConfig): Record<string, unknown> {
   return {
     id,
@@ -250,7 +266,7 @@ function hydrate(): Store {
   // Make sure every registered strategy has a config (fill from defaults)
   for (const s of strategies) {
     if (!configs[s.id]) {
-      configs[s.id] = { ...(defaultPerStrategy[s.id] ?? { enabled: false, evThreshold: 5, stake: 20, fireAtPhase: "action" }) };
+      configs[s.id] = defaultConfigFor(s.id);
       stmtUpsertStrategyConfig.run(configToRow(s.id, configs[s.id]));
     }
   }
@@ -344,7 +360,7 @@ const store = globalThis.__toteflowStore ?? (globalThis.__toteflowStore = hydrat
 // was first hydrated won't get a config (dev) until a full server restart.
 for (const s of strategies) {
   if (!store.strategyConfigs[s.id]) {
-    const cfg = defaultPerStrategy[s.id] ?? { enabled: false, evThreshold: 5, stake: 20, fireAtPhase: "action" };
+    const cfg = defaultConfigFor(s.id);
     store.strategyConfigs[s.id] = cfg;
     stmtUpsertStrategyConfig.run(configToRow(s.id, cfg));
   }
