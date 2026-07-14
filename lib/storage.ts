@@ -382,6 +382,7 @@ export const Tickets = {
       stagedAt: t.stagedAt ?? null,
       abortedAt: t.abortedAt ?? null,
       abortReason: t.abortReason ?? null,
+      payoutSource: t.payoutSource ?? null,
     });
   },
   byId(id: string) { return store.tickets.find(x => x.id === id); },
