@@ -4,6 +4,7 @@ import {
   calibrateTVGBaselineTrueP,
   calibrateTVGBaselineHarnessTrueP,
   calibrateTVGBaselineQHTrueP,
+  calibrateTVGBaselineJumpsTrueP,
   evPercentFromTrueP,
 } from "../strategy-calibration";
 
@@ -74,4 +75,8 @@ export const tvgBaselineHarnessStrategy: Strategy = build(
 
 export const tvgBaselineQHStrategy: Strategy = build(
   "tvg-baseline-qh", "TVG Model Baseline (QH)", ["quarter-horse"], calibrateTVGBaselineQHTrueP,
+);
+
+export const tvgBaselineJumpsStrategy: Strategy = build(
+  "tvg-baseline-jumps", "TVG Model Baseline (Jumps)", ["jumps"], calibrateTVGBaselineJumpsTrueP,
 );

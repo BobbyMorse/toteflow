@@ -1,14 +1,24 @@
-// Classify tracks so strategies can filter by what's realistically bettable
-// on major US ADWs (FanDuel Racing, TVG, TwinSpires) and where TVG's
-// winProbability model is calibrated (thoroughbred markets).
+// Classify races so strategies can filter by discipline and by what's
+// realistically bettable on major US ADWs (FanDuel Racing, TVG, TwinSpires).
+//
+// Classification is two-tier:
+//   1. classifyRace() — per-race, from TVG's own feed data (breed enum,
+//      isGreyhound flag, race-class code, description). Authoritative: it
+//      correctly handles mixed cards (a track that runs flat in the afternoon
+//      and trot at night, or flat/hurdle on the same card) that no venue
+//      table ever could.
+//   2. classifyTrack() — name/code heuristics. Fallback only, for contexts
+//      where the feed's breed fields are unavailable.
 
 export type TrackType =
   | "thoroughbred-major"          // BEL, GP, CD, SA, etc.
   | "thoroughbred-minor"          // PRM, EMD, MNR, FRT, etc.
-  | "thoroughbred-international"  // GB/IE/FR/AU flat thoroughbred — TVG/FanDuel carries it via commingled pools
-  | "harness"                     // NFL, POC, OCD — standardbreds
+  | "thoroughbred-international"  // flat thoroughbred abroad — TVG/FanDuel carries it via commingled pools
+  | "harness"                     // standardbred trot/pace — US harness + European trot
   | "quarter-horse"               // LA, RD — different breed, short sprints
-  | "international"               // jumps tracks + unclassifiable international — skip
+  | "jumps"                       // hurdle/chase/NH — flat model can't read falls, refusals, soft going
+  | "greyhound"                   // dogs — no horse strategy applies
+  | "international"               // unclassifiable international — legacy value, skip
   | "unknown";
 
 const THOROUGHBRED_MAJOR = new Set([
@@ -31,64 +41,119 @@ const QUARTER_HORSE = new Set([
   "LA","RD","ALB","LBG","RUI","WMF","ORP","RP","DG","DG2","FNL","BTP",
 ]);
 
-// International tracks whose meets are predominantly jumps (steeplechase /
-// hurdle). TVG's flat-racing winProbability model isn't calibrated for jumps
-// — falls, refusals, soft going, weight-carrying dynamics are all different.
-// Mixed-card tracks that lean jumps (Aintree, Cheltenham, Punchestown) are
-// included here too: safer to miss their flat days than to bet a chase race
-// the model can't read. Names are normalized lowercase after the country
-// prefix is stripped (e.g. "GB - Cartmel" → "cartmel").
+// International tracks whose meets are exclusively or predominantly jumps
+// (steeplechase / hurdle). Fallback only — when the feed's race-class code is
+// available, classifyRace() decides flat-vs-jumps per race, so mixed cards
+// (Ayr, Musselburgh flat days) are handled correctly there.
 const INTERNATIONAL_JUMPS_NAMES = new Set([
   // UK National Hunt only
-  "cartmel","fakenham","fontwell","hexham","huntingdon","kelso","ludlow",
+  "cartmel","exeter","fakenham","fontwell","hexham","huntingdon","kelso","ludlow",
   "market rasen","newton abbot","plumpton","sedgefield","stratford","taunton",
   "towcester","warwick","wetherby","wincanton","worcester","bangor","hereford",
   "uttoxeter","perth",
-  // UK predominantly NH (mixed cards — skip to be safe)
+  // UK predominantly NH (mixed cards — skip to be safe when no per-race data)
   "aintree","cheltenham","ayr","musselburgh",
   // IE NH-only or predominantly
-  "thurles","clonmel","fairyhouse","punchestown","navan",
+  "thurles","clonmel","fairyhouse","punchestown","navan","kilbeggan","downpatrick",
   // FR jumps
   "auteuil",
 ]);
 
-const FLAT_THOROUGHBRED_COUNTRIES = new Set([
-  "GB","IE","FR","AU","JP","HK","SG","UAE","SA","NZ","CA","DE","IT",
-  // Flat jurisdictions TVG carries that used to fall into the skip bucket
-  // (ZA - Durbanville, BR - Gavea, CL - Club Hipico Concepcion, etc.).
-  "ZA","BR","CL","AR","UY","PE","KR","MX",
-]);
-
 // Countries whose TVG meets are trot (standardbred) racing — same discipline
 // as US harness, so harness strategies get them instead of a blanket skip.
+// Exception: the Nordic flat-galopp venues below.
 const TROT_COUNTRIES = new Set(["SE","NO","DK","FI"]);
 
-// France is in the flat whitelist, but these venues are trot-only — without
-// this carve-out thoroughbred strategies would fire on trot races.
-const FRENCH_TROT_NAMES = new Set([
-  "vincennes","enghien","cabourg","caen","laval",
+// The Nordics' few flat thoroughbred courses. Everything else SE/NO/DK/FI on
+// the feed is trot. (Finland has no thoroughbred racing at all.)
+const NORDIC_GALOPP_NAMES = new Set([
+  "ovrevoll","klampenborg","bro park","goteborg","jagersro galopp","taby",
 ]);
 
+// France is flat-whitelisted, but these venues are trot-only — without the
+// carve-out thoroughbred strategies would fire on trot races. (Measured: 16
+// bets at Enghien/Cabourg before this existed, 0 wins, -$320.) Fallback only;
+// the feed's breed enum catches every French trot race regardless of venue.
+const FRENCH_TROT_NAMES = new Set([
+  "vincennes","enghien","cabourg","caen","laval","cordemais","mauquenchy",
+  "graignes","cherbourg","argentan",
+]);
+
+// Jumps detection from TVG's race-class code. International thoroughbred
+// races carry codes like "Z-G-F" / "Z-I-H" / "Z-PM-N": the last letter is the
+// race discipline — F = Flat; H = Hurdle, C = Chase, N = NH flat (bumper),
+// S = steeplechase. Anything non-F is a National Hunt race.
+const JUMPS_CLASS_RE = /^Z-[A-Z]+-([A-Z])$/;
+// Description keywords as a second net (catches US steeplechase cards and
+// French jumps, where "haies" = hurdles).
+const JUMPS_DESC_RE = /\b(hurdle|steeplechase|steeple chase|national hunt|haies)\b/i;
+
+export interface RaceClassificationInput {
+  trackCode: string;
+  trackName?: string | null;
+  /** TVG race type enum code: T = Thoroughbred, H = Harness, Q = QuarterHorse, L = Thoroughbred LARC (Latin America). */
+  breedCode?: string | null;
+  isGreyhound?: boolean | null;
+  /** TVG raceClass code, e.g. "CLM", "Z-G-F", "Z-P-H". */
+  raceClassCode?: string | null;
+  description?: string | null;
+}
+
+// Per-race classification from the feed's own breed/class data. Falls back to
+// classifyTrack() name heuristics when the feed omits the breed enum.
+export function classifyRace(input: RaceClassificationInput): TrackType {
+  const { trackCode, trackName, breedCode, isGreyhound, raceClassCode, description } = input;
+  if (isGreyhound) return "greyhound";
+
+  const isJumps =
+    (() => {
+      const m = JUMPS_CLASS_RE.exec((raceClassCode ?? "").trim());
+      if (m) return m[1] !== "F";
+      return JUMPS_DESC_RE.test(description ?? "");
+    })();
+
+  switch ((breedCode ?? "").trim().toUpperCase()) {
+    case "H": return "harness";
+    case "Q": return "quarter-horse";
+    case "L": return isJumps ? "jumps" : "thoroughbred-international"; // LARC = Latin American flat
+    case "T": {
+      if (isJumps) return "jumps";
+      // Breed is authoritative; the name-based pass only sets granularity.
+      const byName = classifyTrack(trackCode, trackName ?? undefined);
+      if (isThoroughbred(byName)) return byName;
+      // Name heuristics disagree (e.g. a Nordic galopp day at a trot venue,
+      // or an unlisted US track) — trust the feed's breed.
+      return /^[A-Z]{2}\s*-\s*/.test(trackName ?? "") ? "thoroughbred-international" : "thoroughbred-minor";
+    }
+    default: {
+      const byName = classifyTrack(trackCode, trackName ?? undefined);
+      // Even without a breed enum, an explicit jumps class code is decisive.
+      if (isJumps && isThoroughbred(byName)) return "jumps";
+      return byName;
+    }
+  }
+}
+
+// Name/code heuristics — fallback when no per-race feed data is available.
 export function classifyTrack(trackCode: string, trackName?: string): TrackType {
   const code = trackCode.toUpperCase();
   const name = (trackName ?? "").toLowerCase();
 
   // International prefixes from TVG's naming: "GB - ", "AU - ", "JP - ", etc.
-  // Three-way split: flat thoroughbred (bet-eligible — TVG/FanDuel commingles
-  // pools and the model often reads them well), trot (standardbred — routed to
-  // the harness strategy group, same discipline as US harness), and jumps
-  // (skip — the flat model can't read falls/refusals/soft going).
+  // Flat thoroughbred is the default for named international meets — the
+  // carve-outs route trot to the harness group and jumps venues to jumps.
   const intlMatch = (trackName ?? "").match(/^([A-Z]{2})\s*-\s*(.+)$/);
   if (intlMatch) {
     const country = intlMatch[1].toUpperCase();
     const trackOnly = intlMatch[2].trim().toLowerCase();
-    if (TROT_COUNTRIES.has(country)) return "harness";
+    if (TROT_COUNTRIES.has(country) && !NORDIC_GALOPP_NAMES.has(trackOnly)) return "harness";
     if (country === "FR" && FRENCH_TROT_NAMES.has(trackOnly)) return "harness";
-    if (!FLAT_THOROUGHBRED_COUNTRIES.has(country)) return "international";
-    if (INTERNATIONAL_JUMPS_NAMES.has(trackOnly)) return "international";
+    if (INTERNATIONAL_JUMPS_NAMES.has(trackOnly)) return "jumps";
     return "thoroughbred-international";
   }
-  if (/^(L\d|A\d|S\d|AU\d|BT|JP|GG|VM|LY|HX|BS|PJ|KAL|XKD)/.test(code)) return "international";
+  // International sim codes with no country-prefixed name: overwhelmingly
+  // flat thoroughbred (AU/JP/etc. simulcasts).
+  if (/^(L\d|A\d|S\d|AU\d|BT|JP|GG|VM|LY|HX|BS|PJ|KAL|XKD)/.test(code)) return "thoroughbred-international";
 
   if (THOROUGHBRED_MAJOR.has(code)) return "thoroughbred-major";
   if (THOROUGHBRED_MINOR.has(code)) return "thoroughbred-minor";
@@ -115,9 +180,9 @@ export function isThoroughbred(type: TrackType): boolean {
 // Coarser grouping for strategy scoping. Strategies declare which disciplines
 // they apply to via `Strategy.appliesTo`; the autobook uses this to gate races
 // before evaluation, so a thoroughbred strategy never sees a harness card and
-// vice-versa. Keeps breed-specific strategies isolated so adding a harness
-// group can't contaminate the thoroughbred P&L.
-export type Discipline = "thoroughbred" | "harness" | "quarter-horse";
+// vice-versa. Keeps discipline-specific strategy groups isolated so adding a
+// harness or jumps group can't contaminate the thoroughbred P&L.
+export type Discipline = "thoroughbred" | "harness" | "quarter-horse" | "jumps";
 
 export function disciplineOfTrack(type: TrackType | undefined): Discipline | null {
   switch (type) {
@@ -127,7 +192,8 @@ export function disciplineOfTrack(type: TrackType | undefined): Discipline | nul
       return "thoroughbred";
     case "harness":         return "harness";
     case "quarter-horse":   return "quarter-horse";
-    default:                return null; // international / unknown never match a strategy
+    case "jumps":           return "jumps";
+    default:                return null; // greyhound / international / unknown never match a strategy
   }
 }
 
@@ -159,6 +225,8 @@ export function trackTypeBadge(type: TrackType | undefined): { label: string; to
     case "thoroughbred-international": return { label: "TB INTL",  tone: "tb" };
     case "harness":                    return { label: "HARNESS",  tone: "harness" };
     case "quarter-horse":              return { label: "QH",       tone: "qh" };
+    case "jumps":                      return { label: "JUMPS",    tone: "intl" };
+    case "greyhound":                  return { label: "DOGS",     tone: "unknown" };
     case "international":              return { label: "INTL",     tone: "intl" };
     default:                           return { label: "?",        tone: "unknown" };
   }

@@ -24,6 +24,8 @@ const VARIANT_MODEL_WEIGHT: Record<Discipline, number> = {
   thoroughbred: 0.65,     // adapter default — no change
   harness: 0.15,          // matches tvg-baseline-harness calibration
   "quarter-horse": 0.15,  // same as harness; revisit with data
+  jumps: 0.15,            // unmeasured — flat model on NH racing; start at the
+                          // most conservative fitted weight and refit with data
 };
 
 function adapterWeightForQuality(quality: Race["modelQuality"]): number {

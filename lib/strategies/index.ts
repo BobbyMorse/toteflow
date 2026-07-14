@@ -3,6 +3,7 @@ import {
   tvgBaselineStrategy,
   tvgBaselineHarnessStrategy,
   tvgBaselineQHStrategy,
+  tvgBaselineJumpsStrategy,
 } from "./tvg-baseline";
 import { favFadeStrategy } from "./fav-fade";
 import { loneSpeedStrategy } from "./lone-speed";
@@ -46,13 +47,18 @@ const harnessVariants = variantable.map(base =>
 const quarterHorseVariants = variantable.map(base =>
   variantStrategy(base, { discipline: "quarter-horse", idSuffix: "qh", nameSuffix: "(QH)" }),
 );
+const jumpsVariants = variantable.map(base =>
+  variantStrategy(base, { discipline: "jumps", idSuffix: "jumps", nameSuffix: "(Jumps)" }),
+);
 
 export const strategies: Strategy[] = [
   ...baseStrategies,
   tvgBaselineHarnessStrategy,
   tvgBaselineQHStrategy,
+  tvgBaselineJumpsStrategy,
   ...harnessVariants,
   ...quarterHorseVariants,
+  ...jumpsVariants,
 ];
 
 export function getStrategy(id: string): Strategy | undefined {

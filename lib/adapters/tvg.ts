@@ -1,7 +1,7 @@
 import type { RacingProvider, Race, Runner } from "../types";
 import { fractionalOdds } from "../format";
 import { takeoutForTrack } from "../track-takeout";
-import { classifyTrack } from "../track-types";
+import { classifyRace } from "../track-types";
 
 const ENDPOINT = "https://service.tvg.com/graph/v2/query";
 
@@ -15,6 +15,10 @@ const QUERY = `{
     id number trackCode trackName mtp postTime distance purse
     surface { name }
     status { code name }
+    type { code }
+    isGreyhound
+    raceClass { code }
+    description
     bettingInterests {
       biNumber saddleColor favorite
       morningLineOdds { numerator denominator }
@@ -57,6 +61,10 @@ interface TvgRace {
   distance: string | null; purse: number | null;
   surface: { name: string } | null;
   status: { code: string; name: string } | null;
+  type: { code: string } | null;        // breed: T / H / Q / L (Thoroughbred LARC)
+  isGreyhound: boolean | null;
+  raceClass: { code: string } | null;   // "Z-G-F" style intl codes flag flat vs jumps
+  description: string | null;
   bettingInterests: TvgBI[];
   pools: TvgPool[];
   wagerTypes: TvgWagerType[] | null;
@@ -279,7 +287,17 @@ function toRace(tr: TvgRace): Race {
     modelQuality,
     modelQualityReason,
     wagerMinimums: Object.keys(wagerMinimums).length ? wagerMinimums : undefined,
-    trackType: classifyTrack(tr.trackCode, tr.trackName),
+    // Per-race classification from the feed's own breed/class fields —
+    // handles mixed cards (flat + trot at one venue, flat + hurdle on one
+    // card) that track-level name heuristics get wrong.
+    trackType: classifyRace({
+      trackCode: tr.trackCode,
+      trackName: tr.trackName,
+      breedCode: tr.type?.code,
+      isGreyhound: tr.isGreyhound,
+      raceClassCode: tr.raceClass?.code,
+      description: tr.description,
+    }),
   };
 }
 

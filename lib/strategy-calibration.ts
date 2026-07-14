@@ -24,6 +24,10 @@ const TVG_BASELINE_HARNESS_MODEL_WEIGHT = 0.15;
 // Quarter-horse: sample too small to fit; treat like harness for now
 // (short-field, non-thoroughbred). Same knob — revisit with data.
 const TVG_BASELINE_QH_MODEL_WEIGHT = 0.15;
+// Jumps: no bets yet — the model is flat-fit and jumps add falls/refusals/
+// stamina dynamics it has never seen, so start at the most conservative
+// fitted weight we have (harness's 0.15) and refit once snapshots accumulate.
+const TVG_BASELINE_JUMPS_MODEL_WEIGHT = 0.15;
 
 // Back out the adapter's pre-blend raw model P from its blended trueP, then
 // re-blend at the strategy's more conservative weight.
@@ -52,6 +56,10 @@ export function calibrateTVGBaselineQHTrueP(adapterTrueP: number, marketP: numbe
   return calibrateWithWeight(adapterTrueP, marketP, TVG_BASELINE_QH_MODEL_WEIGHT);
 }
 
+export function calibrateTVGBaselineJumpsTrueP(adapterTrueP: number, marketP: number): number {
+  return calibrateWithWeight(adapterTrueP, marketP, TVG_BASELINE_JUMPS_MODEL_WEIGHT);
+}
+
 // Strategy-aware trueP: routes by strategy id. Each tvg-baseline variant
 // gets its own re-blend weight (see constants above). Anything else passes
 // the adapter's value through unchanged.
@@ -63,6 +71,7 @@ export function strategyCalibratedTrueP(
   if (strategyId === "tvg-baseline") return calibrateTVGBaselineTrueP(adapterTrueP, marketP);
   if (strategyId === "tvg-baseline-harness") return calibrateTVGBaselineHarnessTrueP(adapterTrueP, marketP);
   if (strategyId === "tvg-baseline-qh") return calibrateTVGBaselineQHTrueP(adapterTrueP, marketP);
+  if (strategyId === "tvg-baseline-jumps") return calibrateTVGBaselineJumpsTrueP(adapterTrueP, marketP);
   return adapterTrueP;
 }
 
