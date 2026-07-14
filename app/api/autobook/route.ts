@@ -85,7 +85,7 @@ function statsFor(strategyId: string, allTickets: Ticket[]): StrategyStats {
   };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   void autobook.tickIfDue();
   void grader.tickIfDue();
 
@@ -116,10 +116,22 @@ export async function GET() {
     ? totalsClosingValues.reduce((a, v) => a + v, 0) / totalsClosingValues.length
     : null;
 
-  // Today's slice (last 24h, settled, non-shadow). The user needs this to
+  // Today's slice (calendar day, settled, non-shadow). The user needs this to
   // distinguish "today is bad" from a lifetime average that hides recent perf.
-  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-  const todaySettled = settled.filter(t => t.placedAt > cutoff);
+  // "Today" = since midnight in the BROWSER's timezone — the server runs on Fly
+  // in UTC, so the client sends its UTC offset (?tz=, minutes, as returned by
+  // Date.getTimezoneOffset). Without it, fall back to server-local midnight.
+  const tzParam = new URL(req.url).searchParams.get("tz");
+  const tzOffsetMin = tzParam != null && Number.isFinite(Number(tzParam)) ? Number(tzParam) : null;
+  let cutoff: number;
+  if (tzOffsetMin != null) {
+    const DAY = 24 * 60 * 60 * 1000;
+    const localNow = Date.now() - tzOffsetMin * 60 * 1000;
+    cutoff = Math.floor(localNow / DAY) * DAY + tzOffsetMin * 60 * 1000;
+  } else {
+    cutoff = new Date().setHours(0, 0, 0, 0);
+  }
+  const todaySettled = settled.filter(t => t.placedAt >= cutoff);
   const todayWon = todaySettled.filter(t => t.status === "won");
   const todayPL = todaySettled.reduce((a, t) => a + (t.realizedPL ?? 0), 0);
   const todayStaked = todaySettled.reduce((a, t) => a + t.stake, 0);

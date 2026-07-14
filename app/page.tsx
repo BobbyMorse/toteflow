@@ -28,7 +28,7 @@ export default function RaceRadar() {
   const [book, setBook] = useState<AutobookSummary | null>(null);
 
   useEffect(() => {
-    const load = () => fetch(apiUrl("/api/autobook")).then(r => r.json()).then(setBook).catch(() => {});
+    const load = () => fetch(apiUrl(`/api/autobook?tz=${new Date().getTimezoneOffset()}`)).then(r => r.json()).then(setBook).catch(() => {});
     load();
     const i = setInterval(load, 5000);
     return () => clearInterval(i);

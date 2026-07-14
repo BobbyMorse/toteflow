@@ -25,7 +25,7 @@ export default function TicketsPage() {
     const load = async () => {
       const [t, ab] = await Promise.all([
         fetch(apiUrl("/api/tickets")).then(r => r.json()),
-        fetch(apiUrl("/api/autobook")).then(r => r.json()),
+        fetch(apiUrl(`/api/autobook?tz=${new Date().getTimezoneOffset()}`)).then(r => r.json()),
       ]);
       setTickets(t.tickets ?? []);
       setState(ab);
@@ -110,10 +110,12 @@ export default function TicketsPage() {
 
           {/* TODAY-ONLY SLICE — surfaces today's actual perf separately from the
               lifetime average. Without this, a bad day hides inside a multi-week
-              hit rate and the user can't see "we're losing right now". */}
+              hit rate and the user can't see "we're losing right now".
+              "Today" = calendar day since local midnight (tz offset passed to
+              the API), matching the History section below. */}
           {state.today && state.today.settled > 0 && (
             <div className="mt-4 pt-3 border-t border-line/40 grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-3 sm:gap-4">
-              <span className="stat-label text-ink-2 col-span-2 sm:col-auto">Today (last 24h, settled):</span>
+              <span className="stat-label text-ink-2 col-span-2 sm:col-auto">Today (since midnight, settled):</span>
               <Stat label="Bets" value={state.today.settled.toString()}/>
               <Stat label="Won"
                 value={`${state.today.won} / ${state.today.settled}`}
