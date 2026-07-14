@@ -25,6 +25,7 @@ import { decideBetWindow } from "./optimal-timer";
 import { minBaseForWager } from "./wager-minimums";
 import { strategyCalibratedTrueP, validateEVConsistency, evPercentFromTrueP } from "./strategy-calibration";
 import { strategyAppliesToTrack } from "./track-types";
+import { winnerOddsDriftFactor } from "./odds-drift";
 
 function phaseOf(race: Race, now: number): Race["phase"] {
   const ms = race.postTime - now;
@@ -330,15 +331,34 @@ class Engine {
       // This catches cases where odds drifted enough to flip EV negative between
       // match time and fire. Pick-N exotics (tracked separately above) skip this check
       // since their EV is computed at book time against exotic-pool assumptions.
+      //
+      // WIN bets gate on a DRIFT-ADJUSTED EV: winners' odds empirically shorten
+      // ~20% between fire and close (late smart money lands on our picks) and
+      // pari-mutuel pays the closing price, so EV at fire-time odds overstates
+      // what a winning bet returns. Re-price at the odds we'd realistically be
+      // paid (per-strategy median winner drift, lib/odds-drift.ts) before
+      // deciding to fire. capturedEV still stores the unadjusted value so the
+      // (trueP, odds, EV) triple stays internally consistent.
       const EV_FIRE_FLOOR = 0;
-      if (liveEv < EV_FIRE_FLOOR) {
+      let gateEv = liveEv;
+      if (t.type === "WIN" && liveTrueP != null) {
+        const drift = winnerOddsDriftFactor(t.strategyId);
+        if (drift < 1) {
+          const adjOdds = Math.max(1.05, liveOdds * drift);
+          gateEv = evPercentFromTrueP(liveTrueP, adjOdds, race.takeout > 0 ? race.takeout : 0.16);
+        }
+      }
+      if (gateEv < EV_FIRE_FLOOR) {
+        const driftNote = gateEv !== liveEv
+          ? `drift-adj EV ${gateEv.toFixed(1)}% (raw ${liveEv.toFixed(1)}% at fire odds)`
+          : `negative EV at fire (${liveEv.toFixed(1)}%)`;
         Tickets.update(t.id, {
           status: "aborted",
           abortedAt: now,
-          abortReason: `negative EV at fire (${liveEv.toFixed(1)}% < ${EV_FIRE_FLOOR}%)`,
+          abortReason: `${driftNote} < ${EV_FIRE_FLOOR}%`,
         });
         aborted++;
-        this.note(`[${t.strategyId ?? "?"}] ABORT ${t.raceId} #${selection} · EV collapsed to ${liveEv.toFixed(1)}% at fire time`);
+        this.note(`[${t.strategyId ?? "?"}] ABORT ${t.raceId} #${selection} · ${driftNote}`);
         continue;
       }
 
