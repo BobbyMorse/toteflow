@@ -134,6 +134,17 @@ export function classifyRace(input: RaceClassificationInput): TrackType {
   }
 }
 
+// Venue-name membership tolerant of TVG's suffix variants: "Stratford-on-Avon"
+// must match the "stratford" entry, "Bangor-on-Dee" must match "bangor". A
+// plain Set.has() exact match let a Stratford NH card through as flat.
+function nameInSet(trackOnly: string, set: Set<string>): boolean {
+  if (set.has(trackOnly)) return true;
+  for (const n of set) {
+    if (trackOnly.startsWith(n + " ") || trackOnly.startsWith(n + "-") || trackOnly.startsWith(n + " (")) return true;
+  }
+  return false;
+}
+
 // Name/code heuristics — fallback when no per-race feed data is available.
 export function classifyTrack(trackCode: string, trackName?: string): TrackType {
   const code = trackCode.toUpperCase();
@@ -146,9 +157,9 @@ export function classifyTrack(trackCode: string, trackName?: string): TrackType 
   if (intlMatch) {
     const country = intlMatch[1].toUpperCase();
     const trackOnly = intlMatch[2].trim().toLowerCase();
-    if (TROT_COUNTRIES.has(country) && !NORDIC_GALOPP_NAMES.has(trackOnly)) return "harness";
-    if (country === "FR" && FRENCH_TROT_NAMES.has(trackOnly)) return "harness";
-    if (INTERNATIONAL_JUMPS_NAMES.has(trackOnly)) return "jumps";
+    if (TROT_COUNTRIES.has(country) && !nameInSet(trackOnly, NORDIC_GALOPP_NAMES)) return "harness";
+    if (country === "FR" && nameInSet(trackOnly, FRENCH_TROT_NAMES)) return "harness";
+    if (nameInSet(trackOnly, INTERNATIONAL_JUMPS_NAMES)) return "jumps";
     return "thoroughbred-international";
   }
   // International sim codes with no country-prefixed name: overwhelmingly

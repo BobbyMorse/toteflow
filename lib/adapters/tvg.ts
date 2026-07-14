@@ -83,9 +83,13 @@ function oddToDecimal(o: TvgOdd | null | undefined): number {
 // individually tabled (e.g. Santa Anita 15.43%, Tampa 18.5%); unknown
 // tracks fall back to a country average.
 
+// TVG prefixes international meets "CC - Name". Previously only "AU - " and a
+// legacy "UK" prefix were recognized, so every GB/IE/FR/JP/... race silently
+// fell through to US takeout — the GB/IE/FR entries in countryFallback() were
+// dead code and international EV was computed at the wrong rate.
 function inferCountry(trackName: string, code: string): string {
-  if (trackName?.startsWith("AU - ")) return "AU";
-  if (trackName?.startsWith("INT - ") || trackName?.startsWith("UK")) return "GB";
+  const m = trackName?.match(/^([A-Z]{2,3})\s*-\s*/);
+  if (m) return m[1] === "UK" || m[1] === "INT" ? "GB" : m[1];
   return "US";
 }
 

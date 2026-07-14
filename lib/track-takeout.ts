@@ -68,10 +68,13 @@ const US_TRACK_TAKEOUT: Record<string, TrackTakeout> = {
 // Country-level fallback when track isn't in the table. Mirrors the original
 // `takeoutFor` in the TVG adapter so behavior degrades gracefully.
 function countryFallback(country: string): TrackTakeout {
-  if (country === "AU" || country === "HK") return { win: 0.175, place: 0.20, exotic: 0.225 };
+  if (country === "AU" || country === "HK" || country === "NZ") return { win: 0.175, place: 0.20, exotic: 0.225 };
   if (country === "GB" || country === "IE") return { win: 0.10,  place: 0.10, exotic: 0.10  };
   if (country === "FR") return { win: 0.13,  place: 0.13, exotic: 0.21 };
-  return { win: 0.16, place: 0.18, exotic: 0.23 }; // US average
+  // JRA publishes 20% WIN/PLACE; NAR locals run slightly higher on exotics.
+  if (country === "JP") return { win: 0.20,  place: 0.20, exotic: 0.25 };
+  return { win: 0.16, place: 0.18, exotic: 0.23 }; // US average — also the
+  // default for countries whose rates we haven't verified (ZA, BR, CL, SE...)
 }
 
 export function takeoutForTrack(trackCode: string, country: string): TrackTakeout {
