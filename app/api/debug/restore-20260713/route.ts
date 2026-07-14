@@ -117,7 +117,11 @@ export async function POST(req: Request) {
   for (const { id, patch } of RESTORES) {
     const t = Tickets.byId(id);
     if (!t) { results.push({ id, outcome: "NOT FOUND" }); continue; }
-    if (t.status !== "aborted") { results.push({ id, outcome: `skipped (status=${t.status})` }); continue; }
+    // The v44 deploy revealed the rows had reverted further — to staged —
+    // because v43's boot-time abort writes were themselves lost WAL entries.
+    // Accept either pre-restore state; the guard still prevents re-running
+    // over restored (won/lost/void) rows.
+    if (t.status !== "aborted" && t.status !== "staged") { results.push({ id, outcome: `skipped (status=${t.status})` }); continue; }
     Tickets.update(id, patch);
     // reason isn't covered by the shared UPDATE statement — persist directly.
     const newReason = `${t.reason ?? ""} · ${RESTORE_NOTE}`.trim();
