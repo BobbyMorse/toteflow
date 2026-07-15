@@ -56,7 +56,11 @@ const defaultPerStrategy: Record<string, StrategyConfig> = {
   // Enabled — structural edge, math-based, manually playable
   "fav-fade":       { enabled: true,  evThreshold: 3,  stake: 20, fireAtPhase: "action" },
   "pass-control":   { enabled: true,  evThreshold: 1,  stake: 20, fireAtPhase: "action" },
-  "dr-z-place":     { enabled: true,  evThreshold: 3,  stake: 20, fireAtPhase: "action" },
+  // dr-z-place: Ziemba's published cutoff is expected return ≥ 1.14 (+14%) —
+  // the margin that survives breakage and late pool convergence. The naive 3%
+  // default fired on place-pool fill-lag: 14 settled → -22% ROI, 13/14
+  // negative-EV by race-off.
+  "dr-z-place":     { enabled: true,  evThreshold: 14, stake: 20, fireAtPhase: "action" },
   "bridge-jumper":  { enabled: true,  evThreshold: 2,  stake: 20, fireAtPhase: "action" },
   // Carryover Pick-N: stake = desired base ticket cost per combo; the booker
   // floors this to the wager's actual minimum via lib/wager-minimums.ts (some
@@ -272,6 +276,24 @@ function hydrate(): Store {
   }
   const globalEnabledRaw = (stmtGetMeta.get("globalEnabled") as { value: string } | undefined)?.value;
   if (!globalEnabledRaw) stmtSetMeta.run("globalEnabled", "true");
+
+  // One-time raise of dr-z-place (+ discipline variants) to the Ziemba 1.14
+  // cutoff. Deployed DBs already hold a config row with the old 3% default,
+  // and the fill-from-defaults loop above only touches MISSING rows — without
+  // this, the new default never reaches production. Meta-keyed so it runs
+  // once; a user re-lowering the threshold afterwards sticks.
+  {
+    const key = "migration:drz-ziemba-cutoff-v1";
+    if (!(stmtGetMeta.get(key) as { value: string } | undefined)?.value) {
+      for (const id of Object.keys(configs)) {
+        if (id !== "dr-z-place" && !id.startsWith("dr-z-place-")) continue;
+        if (configs[id].evThreshold >= 14) continue;
+        configs[id].evThreshold = 14;
+        stmtUpsertStrategyConfig.run(configToRow(id, configs[id]));
+      }
+      stmtSetMeta.run(key, "done");
+    }
+  }
 
   // Reconcile every hydration: recompute closingEV for every settled WIN
   // ticket from the odds drift (using raw captured when available, else

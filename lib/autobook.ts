@@ -330,6 +330,41 @@ class Engine {
         continue;
       }
 
+      // Fire-time re-gate (opt-in via Strategy.refireAtThreshold): the
+      // strategy's edge must exist in the CURRENT pool, not the staged
+      // snapshot. calibratedEv is null when re-eval failed, returned nothing,
+      // or endorsed a different selection/type — for these strategies that
+      // means "no longer a bet", so abort rather than fire blind on the
+      // stale staged number. Narrower than the removed WIN drift gate (note
+      // below): this re-runs the strategy's own live pricing at fire; it
+      // does not re-price by a historical crush factor.
+      if (originStrategy?.refireAtThreshold) {
+        const threshold = cfg?.evThreshold ?? 0;
+        if (calibratedEv == null) {
+          Tickets.update(t.id, {
+            status: "aborted",
+            abortedAt: now,
+            abortReason: "fire-time re-eval unavailable or picked a different horse — strategy no longer endorses this bet",
+          });
+          aborted++;
+          this.note(`[${t.strategyId ?? "?"}] ABORT ${t.raceId} #${selection} · no fresh endorsement at fire (refire gate)`);
+          continue;
+        }
+        if (calibratedEv < threshold) {
+          Tickets.update(t.id, {
+            status: "aborted",
+            abortedAt: now,
+            abortReason: `edge did not survive to fire: ${calibratedEv.toFixed(1)}% < ${threshold}% threshold (staged at ${t.capturedEV.toFixed(1)}%)`,
+          });
+          aborted++;
+          this.note(
+            `[${t.strategyId ?? "?"}] ABORT ${t.raceId} #${selection} · refire gate: ` +
+            `${calibratedEv.toFixed(1)}% < ${threshold}% (staged ${t.capturedEV.toFixed(1)}%)`,
+          );
+          continue;
+        }
+      }
+
       const baseStake = cfg?.stake ?? t.stake ?? 0;
       const liveStake = isShadow ? 0 : baseStake;
 

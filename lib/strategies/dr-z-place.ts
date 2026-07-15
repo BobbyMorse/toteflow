@@ -16,14 +16,55 @@ import type { Race, Runner } from "../types";
 //   3. For a place bet on horse X, the expected payoff is a function of
 //      WHICH other horse is the second top-2 finisher (because the place
 //      profit pool is split between exactly those two horses). Sum over j.
+//      Payoffs are what the track actually pays: our own bet joins the pool,
+//      the per-$2 price is floored by dime breakage, and minus pools pay the
+//      $2.10 state minimum.
 //   4. EV = P(X top-2) * E[payoff | top-2] - 1.
 //
-// Pick the highest-EV runner. Fire if the edge clears the strategy threshold
-// (default 3%, configurable via the AutoBook UI).
+// Ziemba's protocol bets as LATE as possible (his published runs computed at
+// ~2 minutes to post) and only on expected return ≥ 1.14 — the margin that
+// survives breakage and late pool convergence. Both matter here: the first
+// 14 settled bets of the naive version (3% threshold, stage-time EV) all
+// fired positive and 13/14 were negative-EV by race-off, for -22% ROI. The
+// "inefficiency" in an immature place pool is mostly fill-lag, not
+// mispricing. Hence: pool-maturity gate below, evaluation stays callable
+// through the drag window so the autobook re-prices at fire time, and
+// `refireAtThreshold` makes the fresh fire-time edge the binding gate.
 
-const MIN_SECONDS_TO_POST = 15;
+// Evaluation window: no lower bound before post (fires happen IN drag — the
+// window between scheduled post and actual off — and the promotion path
+// re-runs evaluate() there; a lower bound like the old T-15s gate made that
+// re-eval return null, so tickets fired on their stale stage-time EV). Only
+// cut off when we're past any plausible drag, i.e. the feed is stale
+// (optimal-timer aborts at 90s; margin on top of that).
+const EVAL_MAX_DRAG_SECONDS = 120;
 const MIN_FIELD = 5;
 const MIN_PLACE_POOL = 5_000;          // need real liquidity for breakage math
+// Pool maturity: place pools fill later than win pools, and late place money
+// lands disproportionately on well-backed horses — exactly the runners
+// MIN_WIN_SHARE restricts us to. An "underpriced" place share in a pool that
+// is still mostly empty is fill-lag wearing an edge costume. US thoroughbred
+// place pools settle around 35-50% of the win pool; require at least 25%
+// before trusting the win-vs-place ratio at all.
+const MIN_PLACE_TO_WIN_RATIO = 0.25;
+// Flat paper stake modeled into the payoff (our bet joins the pool and
+// dilutes the imbalance we're betting on — Ziemba's formulas include it).
+// Flat $20 across strategies by policy; not a sizing knob.
+const BET_SIZE = 20;
+// What the track actually pays per $2: profit rounded DOWN to the next dime
+// (breakage), and never below the $2.10 state-minimum price (minus pools).
+// On chalk place prices the theoretical payoff sits at $2.10-$2.40, so
+// breakage alone can eat a several-percent "edge" — quoting un-broken
+// payoffs is how the naive version manufactured +EV that no track pays.
+const MIN_PLACE_PRICE = 2.10;
+const BREAKAGE_INCREMENT = 0.10;
+
+// Convert a theoretical per-$1 payoff into the per-$1 payoff the track pays
+// after dime breakage and the minimum-price floor.
+function breakagePayoff(payoffPerDollar: number): number {
+  const price2 = Math.floor((payoffPerDollar * 2) / BREAKAGE_INCREMENT + 1e-9) * BREAKAGE_INCREMENT;
+  return Math.max(MIN_PLACE_PRICE, price2) / 2;
+}
 // Ziemba's published system only bets well-backed horses (his cutoff was a
 // win-pool probability around 0.15+). Two reasons: the place-pool
 // inefficiency is empirically reliable on horses the crowd trusts to win but
@@ -122,9 +163,10 @@ function topTwoJointProbs(targetProgram: string, winP: Map<string, number>): {
   return { pTopTwo: Math.min(1, pTopTwo), jointOther };
 }
 
-// EV per $1 of placing $1 on `target` to PLACE, given the current pool
-// composition. Returns null if data is insufficient.
-export function evPlace(target: Runner, runners: Runner[], placePoolTotal: number, takeout: number): number | null {
+// EV per $1 of a `betSize` PLACE bet on `target`, given the current pool
+// composition. Models the bet's own pool impact, dime breakage, and the
+// $2.10 minimum price. Returns null if data is insufficient.
+export function evPlace(target: Runner, runners: Runner[], placePoolTotal: number, takeout: number, betSize = BET_SIZE): number | null {
   const winP = poolShares(runners, "winPoolAmount");
   if (!winP || !winP.has(target.program)) return null;
 
@@ -148,15 +190,18 @@ export function evPlace(target: Runner, runners: Runner[], placePoolTotal: numbe
   if (pTopTwo <= 0) return null;
 
   // Conditional on X being top-2, weight payoff over which horse j is the other.
-  // payoff_per_$1(j) = (pool * (1 - t) - myPlace - amount_on_j) / (2 * myPlace) + 1
-  const postTake = pool * (1 - takeout);
+  // Our bet is IN the pool it's paid from: it inflates the total and our
+  // runner's place amount, diluting the imbalance we detected. Then breakage:
+  // payoff_per_$1(j) = breakage(((pool+bet)(1-t) - (myPlace+bet) - amount_on_j) / (2(myPlace+bet)) + 1)
+  const postTake = (pool + betSize) * (1 - takeout);
+  const myTotal = myPlace + betSize;
   let expectedPayoff = 0;
   let weightSum = 0;
   for (const [j, joint] of jointOther) {
     const amtJ = placeAmount.get(j);
     if (amtJ == null || amtJ <= 0) continue;
-    const profitPool = Math.max(0, postTake - myPlace - amtJ);
-    const payoffPerDollar = profitPool / (2 * myPlace) + 1;
+    const profitPool = Math.max(0, postTake - myTotal - amtJ);
+    const payoffPerDollar = breakagePayoff(profitPool / (2 * myTotal) + 1);
     expectedPayoff += joint * payoffPerDollar;
     weightSum += joint;
   }
@@ -176,9 +221,14 @@ export const drZPlaceStrategy: Strategy = {
   appliesTo: ["thoroughbred"],
   name: "Dr. Z Place",
   thesis: "Place-pool mispricing: bet PLACE when win-pool prob materially exceeds place-pool prob (Ziemba & Hausch).",
+  // The edge is a pool-composition read that converges away right up to off —
+  // the fire-time re-eval, not the staged snapshot, must clear the threshold.
+  refireAtThreshold: true,
   evaluate(race: Race) {
     const secondsToPost = (race.postTime - Date.now()) / 1000;
-    if (secondsToPost < MIN_SECONDS_TO_POST) return null;
+    // Stale-feed cutoff only. No lower bound — the promotion path re-runs
+    // this in the drag window and the fresh result is the binding gate.
+    if (secondsToPost < -EVAL_MAX_DRAG_SECONDS) return null;
 
     const live = race.runners.filter(r => !r.scratched && r.currentOdds < 60);
     if (live.length < MIN_FIELD) return null;
@@ -191,7 +241,12 @@ export const drZPlaceStrategy: Strategy = {
     );
     if (!hasPoolData) return null;
 
-    const placePool = race.placePoolTotal ?? 0;
+    const placePoolSum = live.reduce((a, r) => a + (r.placePoolAmount ?? 0), 0);
+    const placePool = (race.placePoolTotal ?? 0) > 0 ? race.placePoolTotal! : placePoolSum;
+    // Pool maturity gate — see MIN_PLACE_TO_WIN_RATIO. A win/place imbalance
+    // measured before the place pool has substantially filled is fill-lag,
+    // not mispricing; it reliably vanishes by off.
+    if (race.winPoolTotal > 0 && placePool < MIN_PLACE_TO_WIN_RATIO * race.winPoolTotal) return null;
     const takeout = placeTakeout(race);
     const winShares = poolShares(live, "winPoolAmount");
     if (!winShares) return null;

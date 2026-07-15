@@ -65,6 +65,15 @@ export interface Strategy {
   // an array of evaluations (potentially one per starting race / leg-1).
   // Strategies that don't need cross-race context can leave this unimplemented.
   evaluateCrossRace?(races: Race[]): StrategyEvaluation[];
+  // When true, the promotion path requires a successful fire-time re-eval
+  // whose FRESH evPercent clears the configured evThreshold — aborts the
+  // staged ticket if re-eval is unavailable, endorses a different selection,
+  // or the fresh edge is below threshold. For strategies whose edge is a
+  // pool-composition read that can converge away between staging and off
+  // (dr-z-place): the staged EV is a claim about a pool that no longer
+  // exists. Opt-in only — WIN-model strategies deliberately do NOT re-gate
+  // at fire (see the drift-gate removal note in autobook.ts).
+  refireAtThreshold?: boolean;
 }
 
 export interface StrategyConfig {
