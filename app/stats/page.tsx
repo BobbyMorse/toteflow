@@ -28,7 +28,7 @@ export default function StatsPage() {
     let cancelled = false;
     const load = async () => {
       try {
-        const r = await fetch(apiUrl(`/api/stats?days=${days}`));
+        const r = await fetch(apiUrl(`/api/stats?days=${days}&tz=${new Date().getTimezoneOffset()}`));
         if (!r.ok) throw new Error(`HTTP ${r.status} ${r.statusText}`);
         const j = await r.json();
         if (!cancelled) {
@@ -446,7 +446,7 @@ function DayDetail({ day, onClose }: { day: DailyTotal; onClose: () => void }) {
     let cancelled = false;
     setTickets(null);
     setErr(null);
-    fetch(apiUrl(`/api/stats/day?date=${day.day}`))
+    fetch(apiUrl(`/api/stats/day?date=${day.day}&tz=${new Date().getTimezoneOffset()}`))
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(j => { if (!cancelled) setTickets(j.tickets); })
       .catch(e => { if (!cancelled) setErr(e.message || String(e)); });

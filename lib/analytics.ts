@@ -253,9 +253,17 @@ export function strategyAnalytics(): StrategyAnalytics[] {
   });
 }
 
+// Day bucketing for the two daily queries happens in the VIEWER's timezone:
+// the client passes its UTC offset (?tz=, minutes, as Date.getTimezoneOffset
+// returns) and we shift epochs by it before taking the UTC date. This keeps
+// the calendar consistent with the dashboard's "today since midnight" strip,
+// which uses the same offset. Fallback is the server's current offset —
+// equivalent to the old 'localtime' bucketing except across historical DST
+// transitions, where days near midnight can shift by an hour. Accepted: the
+// same fixed-offset convention is used everywhere, so no view disagrees.
 const Q_DAILY = db.prepare(`
   SELECT
-    date(placedAt / 1000, 'unixepoch', 'localtime') AS day,
+    date(placedAt / 1000 - ? * 60, 'unixepoch') AS day,
     strategyId,
     COUNT(*)                                                            AS bets,
     SUM(CASE WHEN status IN ('won','lost') THEN realizedPL ELSE 0 END)  AS pl
@@ -267,9 +275,10 @@ const Q_DAILY = db.prepare(`
   ORDER BY day ASC, strategyId
 `);
 
-export function dailyPL(lookbackDays: number): DailyPL[] {
+export function dailyPL(lookbackDays: number, tzOffsetMin?: number | null): DailyPL[] {
+  const tz = tzOffsetMin ?? new Date().getTimezoneOffset();
   const since = Date.now() - lookbackDays * 86_400_000;
-  const rows = Q_DAILY.all(since) as any[];
+  const rows = Q_DAILY.all(tz, since) as any[];
   // Compute cumulative P/L per strategy
   const cum: Record<string, number> = {};
   const out: DailyPL[] = [];
@@ -288,7 +297,7 @@ export function dailyPL(lookbackDays: number): DailyPL[] {
 
 const Q_DAILY_TOTALS = db.prepare(`
   SELECT
-    date(placedAt / 1000, 'unixepoch', 'localtime') AS day,
+    date(placedAt / 1000 - ? * 60, 'unixepoch') AS day,
     SUM(CASE WHEN status IN ('open','won','lost') THEN 1 ELSE 0 END) AS bets,
     SUM(CASE WHEN status IN ('won','lost') THEN 1 ELSE 0 END)        AS settled,
     SUM(CASE WHEN status = 'won'  THEN 1 ELSE 0 END)                 AS won,
@@ -302,9 +311,10 @@ const Q_DAILY_TOTALS = db.prepare(`
   ORDER BY day ASC
 `);
 
-export function dailyTotals(lookbackDays: number): DailyTotal[] {
+export function dailyTotals(lookbackDays: number, tzOffsetMin?: number | null): DailyTotal[] {
+  const tz = tzOffsetMin ?? new Date().getTimezoneOffset();
   const since = Date.now() - lookbackDays * 86_400_000;
-  const rows = Q_DAILY_TOTALS.all(since) as any[];
+  const rows = Q_DAILY_TOTALS.all(tz, since) as any[];
   return rows.map(r => ({
     day: r.day,
     bets: r.bets || 0,

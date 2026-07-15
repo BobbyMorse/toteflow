@@ -106,7 +106,7 @@ export default function AnalyticsPage() {
     let cancelled = false;
     const load = async () => {
       try {
-        const r = await fetch(apiUrl(`/api/stats?days=${days}`));
+        const r = await fetch(apiUrl(`/api/stats?days=${days}&tz=${new Date().getTimezoneOffset()}`));
         if (!r.ok) throw new Error(`HTTP ${r.status} ${r.statusText}`);
         const j = await r.json();
         if (!cancelled) { setData(j); setError(null); }
