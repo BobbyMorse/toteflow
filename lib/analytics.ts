@@ -275,9 +275,20 @@ const Q_DAILY = db.prepare(`
   ORDER BY day ASC, strategyId
 `);
 
+// Epoch ms of the viewer-local midnight (lookbackDays - 1) days ago. A
+// "14 day" window is exactly the 14 calendar days the stats calendar renders
+// — never a rolling `now - 14*24h` instant, which drags in a truncated
+// partial 15th day that the grid has no cell for (header said +$1089 while
+// the visible cells summed to a loss).
+function sinceLocalMidnight(lookbackDays: number, tzOffsetMin: number): number {
+  const shiftedNow = Date.now() - tzOffsetMin * 60_000;
+  const startOfTodayShifted = Math.floor(shiftedNow / 86_400_000) * 86_400_000;
+  return startOfTodayShifted - (lookbackDays - 1) * 86_400_000 + tzOffsetMin * 60_000;
+}
+
 export function dailyPL(lookbackDays: number, tzOffsetMin?: number | null): DailyPL[] {
   const tz = tzOffsetMin ?? new Date().getTimezoneOffset();
-  const since = Date.now() - lookbackDays * 86_400_000;
+  const since = sinceLocalMidnight(lookbackDays, tz);
   const rows = Q_DAILY.all(tz, since) as any[];
   // Compute cumulative P/L per strategy
   const cum: Record<string, number> = {};
@@ -313,7 +324,7 @@ const Q_DAILY_TOTALS = db.prepare(`
 
 export function dailyTotals(lookbackDays: number, tzOffsetMin?: number | null): DailyTotal[] {
   const tz = tzOffsetMin ?? new Date().getTimezoneOffset();
-  const since = Date.now() - lookbackDays * 86_400_000;
+  const since = sinceLocalMidnight(lookbackDays, tz);
   const rows = Q_DAILY_TOTALS.all(tz, since) as any[];
   return rows.map(r => ({
     day: r.day,

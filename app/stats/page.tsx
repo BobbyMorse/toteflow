@@ -105,8 +105,12 @@ function DailyResults({
     }
   );
 
-  const activeDays = daily.filter(d => d.bets > 0);
-  const totalPL = daily.reduce((s, d) => s + d.realizedPL, 0);
+  // Header stats come from the SAME cells the grid renders — never from the
+  // raw API rows. If the API window and the rendered window ever disagree
+  // again (clock skew, a future regression), the header still describes
+  // exactly what's on screen instead of silently counting invisible days.
+  const activeDays = cells.filter(d => d.bets > 0);
+  const totalPL = activeDays.reduce((s, d) => s + d.realizedPL, 0);
   const bestDay = activeDays.reduce<DailyTotal | null>(
     (b, d) => (b == null || d.realizedPL > b.realizedPL ? d : b), null);
   const worstDay = activeDays.reduce<DailyTotal | null>(
