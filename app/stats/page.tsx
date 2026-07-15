@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiUrl } from "@/lib/api-url";
 import clsx from "clsx";
 
@@ -16,23 +16,31 @@ interface DailyTotal {
 
 interface StatsResponse {
   dailyTotals: DailyTotal[];
-  lookbackDays: number;
+  // All-time realized P/L across every settled bet — same number the Tickets
+  // page shows, rendered in the header so a month figure can't be misread as
+  // contradicting it.
+  lifetimePL: number | null;
 }
 
 export default function StatsPage() {
   const [data, setData] = useState<StatsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [days, setDays] = useState(14);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        const r = await fetch(apiUrl(`/api/stats?days=${days}&tz=${new Date().getTimezoneOffset()}`));
+        // Full history in one call (366d covers everything; first bet was
+        // 2026-06-30) — month slicing happens client-side, so there is no
+        // rolling-window selector to misread.
+        const r = await fetch(apiUrl(`/api/stats?days=366&tz=${new Date().getTimezoneOffset()}`));
         if (!r.ok) throw new Error(`HTTP ${r.status} ${r.statusText}`);
         const j = await r.json();
         if (!cancelled) {
-          setData({ dailyTotals: j.dailyTotals ?? [], lookbackDays: j.lookbackDays ?? days });
+          setData({
+            dailyTotals: j.dailyTotals ?? [],
+            lifetimePL: j.totals?.realizedPL ?? null,
+          });
           setError(null);
         }
       } catch (e) {
@@ -42,7 +50,7 @@ export default function StatsPage() {
     load();
     const i = setInterval(load, 30_000);
     return () => { cancelled = true; clearInterval(i); };
-  }, [days]);
+  }, []);
 
   if (error && !data) return (
     <div className="py-6 space-y-2">
@@ -54,84 +62,114 @@ export default function StatsPage() {
 
   return (
     <div className="py-4 sm:py-6 space-y-4 sm:space-y-6">
-      <header className="flex flex-wrap items-baseline justify-between gap-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-display font-semibold">Results</h1>
-          <p className="stat-label">Day-by-day P/L. Click a day to see every bet placed.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-ink-2 font-mono uppercase tracking-wider">window:</span>
-          {[7, 14, 30, 90].map(d => (
-            <button key={d} onClick={() => setDays(d)}
-              className={clsx("px-2 py-1 rounded border font-mono",
-                d === days
-                  ? "bg-accent-cyan/15 border-accent-cyan/50 text-accent-cyan"
-                  : "border-line text-ink-2 hover:text-ink-1")}>
-              {d}d
-            </button>
-          ))}
-        </div>
+      <header>
+        <h1 className="text-xl sm:text-2xl font-display font-semibold">Results</h1>
+        <p className="stat-label">Month-by-month P/L. Click a day to see every bet placed.</p>
       </header>
 
       <DailyResults
         daily={data.dailyTotals}
-        lookbackDays={data.lookbackDays}
+        lifetimePL={data.lifetimePL}
       />
 
       <div className="border-t border-line/40 pt-4 text-xs text-ink-2">
-        Strategy verdicts, cumulative P/L, per-track breakdown, and carryover watch moved to{" "}
+        Strategy verdicts, per-track breakdown, and carryover watch moved to{" "}
         <a href="/analytics" className="text-accent-cyan hover:underline font-mono">Analytics ↗</a>.
       </div>
     </div>
   );
 }
 
+type MonthCell = DailyTotal & { future: boolean };
+
 function DailyResults({
-  daily, lookbackDays,
+  daily, lifetimePL,
 }: {
   daily: DailyTotal[];
-  lookbackDays: number;
+  lifetimePL: number | null;
 }) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
-  const [view, setView] = useState<"calendar" | "bars">("calendar");
+  const [view, setView] = useState<"calendar" | "graph">("calendar");
 
-  // Fill in days with no bets so the calendar shows a continuous window.
-  const window = buildDayWindow(lookbackDays);
-  const byDay = new Map(daily.map(d => [d.day, d]));
-  const cells: DailyTotal[] = window.map(day =>
-    byDay.get(day) ?? {
-      day, bets: 0, settled: 0, won: 0, staked: 0,
-      realizedPL: 0, hitRate: null, roi: null,
-    }
-  );
+  const todayStr = fmtLocalDay(new Date());
+  const currentMonth = todayStr.slice(0, 7);
+  const [month, setMonth] = useState<string>(currentMonth); // YYYY-MM
 
-  // Header stats come from the SAME cells the grid renders — never from the
-  // raw API rows. If the API window and the rendered window ever disagree
-  // again (clock skew, a future regression), the header still describes
-  // exactly what's on screen instead of silently counting invisible days.
-  const activeDays = cells.filter(d => d.bets > 0);
-  const totalPL = activeDays.reduce((s, d) => s + d.realizedPL, 0);
-  const bestDay = activeDays.reduce<DailyTotal | null>(
+  const byDay = useMemo(() => new Map(daily.map(d => [d.day, d])), [daily]);
+  const firstDataMonth = daily.length > 0 ? daily[0].day.slice(0, 7) : currentMonth;
+
+  // Every day of the displayed month; days after today render blank.
+  const cells: MonthCell[] = useMemo(() => {
+    const [y, m] = month.split("-").map(Number);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, i) => {
+      const day = `${y}-${String(m).padStart(2, "0")}-${String(i + 1).padStart(2, "0")}`;
+      const row = byDay.get(day) ?? {
+        day, bets: 0, settled: 0, won: 0, staked: 0,
+        realizedPL: 0, hitRate: null, roi: null,
+      };
+      return { ...row, future: day > todayStr };
+    });
+  }, [month, byDay, todayStr]);
+
+  // Header stats always describe exactly what's rendered: the month's cells
+  // in calendar view, the full history in graph view.
+  const statDays = view === "calendar" ? cells.filter(d => d.bets > 0) : daily.filter(d => d.bets > 0);
+  const statPL = statDays.reduce((s, d) => s + d.realizedPL, 0);
+  const bestDay = statDays.reduce<DailyTotal | null>(
     (b, d) => (b == null || d.realizedPL > b.realizedPL ? d : b), null);
-  const worstDay = activeDays.reduce<DailyTotal | null>(
+  const worstDay = statDays.reduce<DailyTotal | null>(
     (b, d) => (b == null || d.realizedPL < b.realizedPL ? d : b), null);
-  const winningDays = activeDays.filter(d => d.realizedPL > 0).length;
-  const losingDays = activeDays.filter(d => d.realizedPL < 0).length;
+  const winningDays = statDays.filter(d => d.realizedPL > 0).length;
+  const losingDays = statDays.filter(d => d.realizedPL < 0).length;
 
   const selected = selectedDay ? byDay.get(selectedDay) ?? null : null;
 
-  const totalCls = totalPL >= 0 ? "text-accent-overlay" : "text-accent-steam";
+  const monthDate = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1);
+  const monthTitle = monthDate.toLocaleString(undefined, { month: "long", year: "numeric" });
+  const canPrev = month > firstDataMonth;
+  const canNext = month < currentMonth;
+  const shiftMonth = (delta: number) => {
+    const d = new Date(monthDate);
+    d.setMonth(d.getMonth() + delta);
+    setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    setSelectedDay(null);
+  };
+
+  const statCls = statPL >= 0 ? "text-accent-overlay" : "text-accent-steam";
+  const lifetimeCls = (lifetimePL ?? 0) >= 0 ? "text-accent-overlay" : "text-accent-steam";
 
   return (
     <section>
-      <div className="flex items-baseline gap-3 mb-2 flex-wrap">
-        <div className="flex flex-wrap items-baseline gap-x-3 sm:gap-x-4 gap-y-1 text-[11px] sm:text-xs text-ink-2 w-full sm:w-auto">
-          <span><span className="font-mono tabular-nums text-ink-1">{activeDays.length}</span> active days</span>
+      <div className="flex items-center gap-3 mb-2 flex-wrap">
+        {view === "calendar" && (
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => shiftMonth(-1)} disabled={!canPrev}
+              aria-label="Previous month"
+              className={clsx("px-2 py-1 rounded border font-mono text-xs",
+                canPrev ? "border-line text-ink-1 hover:text-ink-0 hover:border-white/30" : "border-line/40 text-ink-2/40 cursor-default")}>
+              ‹
+            </button>
+            <span className="font-display font-semibold text-sm sm:text-base min-w-[9.5rem] text-center">
+              {monthTitle}
+            </span>
+            <button onClick={() => shiftMonth(1)} disabled={!canNext}
+              aria-label="Next month"
+              className={clsx("px-2 py-1 rounded border font-mono text-xs",
+                canNext ? "border-line text-ink-1 hover:text-ink-0 hover:border-white/30" : "border-line/40 text-ink-2/40 cursor-default")}>
+              ›
+            </button>
+          </div>
+        )}
+        <div className="flex flex-wrap items-baseline gap-x-3 sm:gap-x-4 gap-y-1 text-[11px] sm:text-xs text-ink-2">
+          <span><span className="font-mono tabular-nums text-ink-1">{statDays.length}</span> active days</span>
           <span className="text-line">·</span>
-          <span>
-            window{" "}
-            <span className={clsx("font-mono tabular-nums font-semibold", totalCls)}>
-              {totalPL >= 0 ? "+" : ""}${totalPL.toFixed(0)}
+          <span title={view === "calendar"
+            ? "Realized P/L across the days of this month"
+            : "Realized P/L across the whole graph"}>
+            {view === "calendar" ? "month" : "total"}{" "}
+            <span className={clsx("font-mono tabular-nums font-semibold", statCls)}>
+              {statPL >= 0 ? "+" : ""}${statPL.toFixed(0)}
             </span>
           </span>
           <span className="text-line">·</span>
@@ -156,9 +194,20 @@ function DailyResults({
               </span>
             </>
           )}
+          {lifetimePL != null && view === "calendar" && (
+            <>
+              <span className="text-line">·</span>
+              <span title="Realized P/L across every settled bet ever — the same number the Tickets page shows.">
+                all-time{" "}
+                <span className={clsx("font-mono tabular-nums font-semibold", lifetimeCls)}>
+                  {lifetimePL >= 0 ? "+" : ""}${lifetimePL.toFixed(0)}
+                </span>
+              </span>
+            </>
+          )}
         </div>
         <div className="ml-auto flex items-center gap-1 text-xs">
-          {(["calendar", "bars"] as const).map(v => (
+          {(["calendar", "graph"] as const).map(v => (
             <button key={v} onClick={() => setView(v)}
               className={clsx("px-2 py-1 rounded border font-mono",
                 v === view
@@ -177,39 +226,21 @@ function DailyResults({
           onSelect={d => setSelectedDay(sel => sel === d ? null : d)}
         />
       ) : (
-        <DailyPLBars
-          cells={cells}
-          selectedDay={selectedDay}
-          onSelect={d => setSelectedDay(sel => sel === d ? null : d)}
-        />
+        <PerformanceGraph daily={daily} />
       )}
 
-      {selected && (
+      {view === "calendar" && selected && (
         <DayDetail
           day={selected}
           onClose={() => setSelectedDay(null)}
         />
       )}
 
-      {!selected && activeDays.length > 0 && (
+      {view === "calendar" && !selected && statDays.length > 0 && (
         <p className="stat-label mt-2">Click a day to see every bet placed.</p>
       )}
     </section>
   );
-}
-
-// Returns YYYY-MM-DD strings for the last N days, oldest first, using local time
-// so the calendar aligns with the user's day boundaries.
-function buildDayWindow(lookbackDays: number): string[] {
-  const out: string[] = [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  for (let i = lookbackDays - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    out.push(fmtLocalDay(d));
-  }
-  return out;
 }
 
 function fmtLocalDay(d: Date): string {
@@ -302,12 +333,12 @@ function paintForPL(pl: number, maxAbs: number): CellPaint {
 function CalendarGrid({
   cells, selectedDay, onSelect,
 }: {
-  cells: DailyTotal[];
+  cells: MonthCell[];
   selectedDay: string | null;
   onSelect: (day: string) => void;
 }) {
   if (cells.length === 0) {
-    return <div className="panel p-4 text-ink-2 text-sm">No bets in the current window.</div>;
+    return <div className="panel p-4 text-ink-2 text-sm">No bets this month.</div>;
   }
   const maxAbs = Math.max(1, ...cells.map(c => Math.abs(c.realizedPL)));
 
@@ -315,7 +346,7 @@ function CalendarGrid({
   const last  = parseDayLocal(cells[cells.length - 1].day);
   const leadPad = first.getDay();
   const tailPad = 6 - last.getDay();
-  const padded: (DailyTotal | null)[] = [
+  const padded: (MonthCell | null)[] = [
     ...Array<null>(leadPad).fill(null),
     ...cells,
     ...Array<null>(tailPad).fill(null),
@@ -338,12 +369,7 @@ function CalendarGrid({
           if (!cell) {
             return <div key={`p${i}`} className="aspect-square sm:aspect-[7/5]" />;
           }
-          const d = parseDayLocal(cell.day);
-          const dayNum = d.getDate();
-          const isFirstOfMonth = dayNum === 1;
-          const monthLabel = isFirstOfMonth
-            ? d.toLocaleString(undefined, { month: "short" })
-            : null;
+          const dayNum = parseDayLocal(cell.day).getDate();
           const isToday = cell.day === today;
           const isSelected = selectedDay === cell.day;
           const hasBets = cell.bets > 0;
@@ -351,6 +377,17 @@ function CalendarGrid({
           const plCompact = Math.abs(cell.realizedPL) >= 1000
             ? `${(cell.realizedPL / 1000).toFixed(1)}k`
             : cell.realizedPL.toFixed(0);
+
+          if (cell.future) {
+            return (
+              <div key={cell.day}
+                className="aspect-square sm:aspect-[7/5] rounded-md p-1 sm:p-2 border border-white/5 min-h-[44px] sm:min-h-[54px]">
+                <span className="font-mono text-[10px] sm:text-[11px] tabular-nums leading-none text-ink-2/40">
+                  {dayNum}
+                </span>
+              </div>
+            );
+          }
 
           return (
             <button
@@ -385,12 +422,7 @@ function CalendarGrid({
                   // carries the marker and the number uses the contrast ink.
                   style={{ color: isToday && !paint.darkInk ? "#22d3ee" : hasBets ? paint.ink : "#5c6678" }}
                 >
-                  {monthLabel ? (
-                    <>
-                      <span className="hidden sm:inline">{monthLabel} </span>
-                      {dayNum}
-                    </>
-                  ) : dayNum}
+                  {dayNum}
                 </span>
                 {hasBets && (
                   <span className="font-mono text-[9px] tabular-nums leading-none hidden sm:inline"
@@ -427,69 +459,115 @@ function CalendarGrid({
   );
 }
 
-function DailyPLBars({
-  cells, selectedDay, onSelect,
-}: {
-  cells: DailyTotal[];
-  selectedDay: string | null;
-  onSelect: (day: string) => void;
-}) {
-  const maxAbs = Math.max(1, ...cells.map(c => Math.abs(c.realizedPL)));
-  const W = 800, H = 200, padL = 44, padR = 8, padT = 10, padB = 24;
+// Cumulative realized P/L since the first bet, one point per calendar day.
+// Days with no bets carry the total flat so the time axis is honest.
+function PerformanceGraph({ daily }: { daily: DailyTotal[] }) {
+  const [hover, setHover] = useState<number | null>(null);
+
+  const points = useMemo(() => {
+    const active = daily.filter(d => d.bets > 0);
+    if (active.length === 0) return [];
+    const map = new Map(active.map(d => [d.day, d]));
+    const out: { day: string; pl: number; cum: number }[] = [];
+    let cum = 0;
+    const end = parseDayLocal(fmtLocalDay(new Date()));
+    for (let d = parseDayLocal(active[0].day); d <= end; d.setDate(d.getDate() + 1)) {
+      const key = fmtLocalDay(d);
+      const pl = map.get(key)?.realizedPL ?? 0;
+      cum += pl;
+      out.push({ day: key, pl, cum });
+    }
+    return out;
+  }, [daily]);
+
+  if (points.length === 0) {
+    return <div className="panel p-4 text-ink-2 text-sm">No settled bets yet.</div>;
+  }
+
+  const W = 800, H = 280, padL = 52, padR = 16, padT = 14, padB = 26;
   const innerW = W - padL - padR;
   const innerH = H - padT - padB;
-  const zeroY = padT + innerH / 2;
-  const barW = Math.max(2, innerW / Math.max(1, cells.length) - 1);
-  const xOf = (i: number) => padL + (i + 0.5) * (innerW / Math.max(1, cells.length));
-  const scale = (innerH / 2) / maxAbs;
+  const cums = points.map(p => p.cum);
+  const lo = Math.min(0, ...cums);
+  const hi = Math.max(0, ...cums);
+  const span = Math.max(1, hi - lo);
+  const yOf = (v: number) => padT + (hi - v) / span * innerH;
+  const xOf = (i: number) => points.length === 1
+    ? padL + innerW / 2
+    : padL + (i / (points.length - 1)) * innerW;
 
-  const idxLabels = [0, Math.floor((cells.length - 1) / 2), cells.length - 1]
-    .filter((v, i, a) => a.indexOf(v) === i && v >= 0 && v < cells.length);
+  const path = points.map((p, i) => `${i === 0 ? "M" : "L"}${xOf(i).toFixed(1)},${yOf(p.cum).toFixed(1)}`).join(" ");
+  const zeroY = yOf(0);
+  const lastPt = points[points.length - 1];
+
+  const idxLabels = [0, Math.floor((points.length - 1) / 2), points.length - 1]
+    .filter((v, i, a) => a.indexOf(v) === i);
+
+  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width * W;
+    const idx = Math.round((x - padL) / innerW * (points.length - 1));
+    setHover(Math.max(0, Math.min(points.length - 1, idx)));
+  };
+
+  const h = hover != null ? points[hover] : null;
+  const fmt$ = (v: number) => `${v >= 0 ? "+" : ""}$${v.toFixed(0)}`;
+  // Tooltip box flips to the left edge of the crosshair past mid-chart.
+  const tipW = 148, tipH = 44;
+  const tipX = h != null ? Math.min(W - padR - tipW, Math.max(padL, xOf(hover!) + (xOf(hover!) > W / 2 ? -tipW - 10 : 10))) : 0;
+  const tipY = h != null ? Math.max(padT, Math.min(H - padB - tipH, yOf(h.cum) - tipH / 2)) : 0;
 
   return (
     <div className="panel p-4 overflow-x-auto">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 500 }}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 500 }}
+        onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+        {/* zero baseline + extents */}
         <line x1={padL} y1={zeroY} x2={W - padR} y2={zeroY}
           stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3"/>
         <text x={padL - 6} y={zeroY + 4} textAnchor="end"
           fill="rgba(255,255,255,0.5)" fontSize={10} fontFamily="monospace">$0</text>
-        <text x={padL - 6} y={padT + 10} textAnchor="end"
-          fill="rgba(255,255,255,0.5)" fontSize={10} fontFamily="monospace">+${maxAbs.toFixed(0)}</text>
-        <text x={padL - 6} y={H - padB - 2} textAnchor="end"
-          fill="rgba(255,255,255,0.5)" fontSize={10} fontFamily="monospace">-${maxAbs.toFixed(0)}</text>
+        {hi > 0 && (
+          <text x={padL - 6} y={padT + 4} textAnchor="end"
+            fill="rgba(255,255,255,0.5)" fontSize={10} fontFamily="monospace">{fmt$(hi)}</text>
+        )}
+        {lo < 0 && (
+          <text x={padL - 6} y={padT + innerH + 4} textAnchor="end"
+            fill="rgba(255,255,255,0.5)" fontSize={10} fontFamily="monospace">{fmt$(lo)}</text>
+        )}
 
-        {cells.map((c, i) => {
-          if (c.bets === 0) return null;
-          const h = Math.abs(c.realizedPL) * scale;
-          const y = c.realizedPL >= 0 ? zeroY - h : zeroY;
-          const isSelected = selectedDay === c.day;
-          const fill = c.realizedPL >= 0 ? "#10b981" : "#ef4444";
-          return (
-            <g key={c.day}>
-              <rect
-                x={xOf(i) - barW / 2}
-                y={y}
-                width={barW}
-                height={Math.max(1, h)}
-                fill={fill}
-                fillOpacity={isSelected ? 1 : 0.75}
-                stroke={isSelected ? "#22d3ee" : "none"}
-                strokeWidth={isSelected ? 1.5 : 0}
-                onClick={() => onSelect(c.day)}
-                style={{ cursor: "pointer" }}
-              >
-                <title>{`${c.day} · ${c.bets} bets · ${c.realizedPL >= 0 ? "+" : ""}$${c.realizedPL.toFixed(0)}`}</title>
-              </rect>
-            </g>
-          );
-        })}
+        <path d={path} fill="none" stroke="#22d3ee" strokeWidth={2}
+          strokeLinejoin="round" strokeLinecap="round"/>
+
+        {/* endpoint marker + direct label of the current total */}
+        <circle cx={xOf(points.length - 1)} cy={yOf(lastPt.cum)} r={3.5} fill="#22d3ee"/>
+        <text x={Math.min(xOf(points.length - 1) + 8, W - padR)} y={yOf(lastPt.cum) - 8}
+          textAnchor="end" fill="#e7edf7" fontSize={12} fontWeight={600} fontFamily="monospace">
+          {fmt$(lastPt.cum)}
+        </text>
 
         {idxLabels.map(i => (
           <text key={i} x={xOf(i)} y={H - 6} textAnchor="middle"
             fill="rgba(255,255,255,0.5)" fontSize={10} fontFamily="monospace">
-            {cells[i].day.slice(5)}
+            {points[i].day.slice(5)}
           </text>
         ))}
+
+        {h != null && (
+          <g pointerEvents="none">
+            <line x1={xOf(hover!)} y1={padT} x2={xOf(hover!)} y2={padT + innerH}
+              stroke="rgba(255,255,255,0.25)"/>
+            <circle cx={xOf(hover!)} cy={yOf(h.cum)} r={4} fill="#22d3ee"
+              stroke="#0a0e15" strokeWidth={1.5}/>
+            <rect x={tipX} y={tipY} width={tipW} height={tipH} rx={5}
+              fill="#10151f" stroke="rgba(255,255,255,0.15)"/>
+            <text x={tipX + 9} y={tipY + 17} fill="#9aa6b9" fontSize={10} fontFamily="monospace">
+              {h.day} · day {fmt$(h.pl)}
+            </text>
+            <text x={tipX + 9} y={tipY + 34} fill="#e7edf7" fontSize={12} fontWeight={600} fontFamily="monospace">
+              total {fmt$(h.cum)}
+            </text>
+          </g>
+        )}
       </svg>
     </div>
   );
