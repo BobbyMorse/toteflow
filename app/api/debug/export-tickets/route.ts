@@ -10,8 +10,8 @@ export async function GET() {
   const header = [
     "id","placedAt","strategyId","raceId","trackCode","trackName","raceNumber",
     "horseName","type","selection","legs","stake","capturedOdds","capturedEV",
-    "potentialPayout","postTime","status","mode","settledAt","realizedPL",
-    "closingOdds","clvPct","winners","reason",
+    "potentialPayout","postTime","status","mode","shadow","payoutSource",
+    "settledAt","realizedPL","closingOdds","clvPct","winners","reason",
   ];
   const lines = [header.join(",")];
   for (const t of rows) {
@@ -42,6 +42,8 @@ export async function GET() {
       t.postTime ? new Date(t.postTime).toISOString() : "",
       t.status,
       t.mode,
+      t.shadow ? "1" : "0",
+      t.payoutSource ?? "",
       t.settledAt ? new Date(t.settledAt).toISOString() : "",
       t.realizedPL?.toFixed(2) ?? "",
       t.closingOdds?.toFixed(2) ?? "",

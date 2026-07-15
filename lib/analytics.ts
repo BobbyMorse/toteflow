@@ -100,6 +100,12 @@ export interface TrackPerformance {
 // because live EV went negative — neither counts as a placed bet. Aborted
 // counts are surfaced separately so users can see how often the optimal-timer
 // is saving them from -EV fires.
+//
+// shadow = 0 on EVERY aggregate here: shadow tickets (stake $0, fired when
+// another strategy already covered the same selection) are attribution
+// records, not bets. The dashboard roll-up already excluded them; these
+// queries didn't, so Results/Analytics counts ran higher than the dashboard
+// for the same day. One definition everywhere: a bet is a non-shadow ticket.
 const Q_STRATEGY = db.prepare(`
   SELECT
     strategyId,
@@ -153,9 +159,10 @@ const Q_STRATEGY = db.prepare(`
         AND type IN ('EXACTA','TRIFECTA','DD','P3','P4','P5','P6','J6')
         AND (payoutSource IS NULL OR payoutSource = 'estimated')
       THEN realizedPL ELSE 0
-    END)                                                              AS estPayoutPL
+    END)                                                              AS estPayoutPL,
+    SUM(CASE WHEN status IN ('won','lost') THEN stake ELSE 0 END)     AS settledStaked
   FROM tickets
-  WHERE strategyId IS NOT NULL
+  WHERE strategyId IS NOT NULL AND shadow = 0
   GROUP BY strategyId
 `);
 
@@ -173,9 +180,10 @@ const Q_OOS = db.prepare(`
       WHEN status IN ('won','lost') AND stake > 0
       THEN (realizedPL / stake) * (realizedPL / stake)
       ELSE 0
-    END)                                                                 AS sumRoiSq
+    END)                                                                 AS sumRoiSq,
+    SUM(CASE WHEN status IN ('won','lost') THEN stake ELSE 0 END)        AS settledStaked
   FROM tickets
-  WHERE strategyId = ? AND placedAt >= ?
+  WHERE strategyId = ? AND placedAt >= ? AND shadow = 0
 `);
 
 function oosFor(strategyId: string): StrategyAnalytics["oos"] {
@@ -197,7 +205,10 @@ function oosFor(strategyId: string): StrategyAnalytics["oos"] {
     staked: r?.staked || 0,
     realizedPL: r?.realizedPL || 0,
     hitRate: settled > 0 ? (r.won || 0) / settled : null,
-    roi: r?.staked > 0 ? (r.realizedPL || 0) / r.staked : null,
+    // ROI over SETTLED stake — open bets have no realized outcome yet, so
+    // including their stake in the denominator understates ROI and disagrees
+    // with the dashboard, which always used settled stake.
+    roi: r?.settledStaked > 0 ? (r.realizedPL || 0) / r.settledStaked : null,
     roiCI95Low: avgRoi != null && ci95 != null ? avgRoi - ci95 : null,
     roiCI95High: avgRoi != null && ci95 != null ? avgRoi + ci95 : null,
   };
@@ -235,7 +246,7 @@ export function strategyAnalytics(): StrategyAnalytics[] {
       realizedPL: r.realizedPL || 0,
       capturedEVTotal: r.capturedEVTotal || 0,
       hitRate: settled > 0 ? (r.won || 0) / settled : null,
-      roi: r.staked > 0 ? (r.realizedPL || 0) / r.staked : null,
+      roi: r.settledStaked > 0 ? (r.realizedPL || 0) / r.settledStaked : null,
       avgClv: r.avgClv,
       avgClosingEV: r.avgClosingEV,
       avgCapturedEV: r.avgCapturedEV,
@@ -269,6 +280,7 @@ const Q_DAILY = db.prepare(`
     SUM(CASE WHEN status IN ('won','lost') THEN realizedPL ELSE 0 END)  AS pl
   FROM tickets
   WHERE strategyId IS NOT NULL
+    AND shadow = 0
     AND status IN ('open','won','lost')
     AND placedAt >= ?
   GROUP BY day, strategyId
@@ -313,9 +325,11 @@ const Q_DAILY_TOTALS = db.prepare(`
     SUM(CASE WHEN status IN ('won','lost') THEN 1 ELSE 0 END)        AS settled,
     SUM(CASE WHEN status = 'won'  THEN 1 ELSE 0 END)                 AS won,
     SUM(CASE WHEN status IN ('open','won','lost') THEN stake ELSE 0 END) AS staked,
+    SUM(CASE WHEN status IN ('won','lost') THEN stake ELSE 0 END)        AS settledStaked,
     SUM(CASE WHEN status IN ('won','lost') THEN realizedPL ELSE 0 END)   AS realizedPL
   FROM tickets
   WHERE strategyId IS NOT NULL
+    AND shadow = 0
     AND status IN ('open','won','lost')
     AND placedAt >= ?
   GROUP BY day
@@ -334,7 +348,7 @@ export function dailyTotals(lookbackDays: number, tzOffsetMin?: number | null): 
     staked: r.staked || 0,
     realizedPL: r.realizedPL || 0,
     hitRate: r.settled > 0 ? (r.won || 0) / r.settled : null,
-    roi: r.staked > 0 ? (r.realizedPL || 0) / r.staked : null,
+    roi: r.settledStaked > 0 ? (r.realizedPL || 0) / r.settledStaked : null,
   }));
 }
 
@@ -347,7 +361,7 @@ const Q_TRACK = db.prepare(`
     SUM(stake)                                            AS staked,
     SUM(CASE WHEN status IN ('won','lost') THEN realizedPL ELSE 0 END) AS realizedPL
   FROM tickets
-  WHERE strategyId IS NOT NULL AND status IN ('won','lost')
+  WHERE strategyId IS NOT NULL AND shadow = 0 AND status IN ('won','lost')
   GROUP BY trackCode, trackName
   ORDER BY bets DESC
   LIMIT 25
@@ -409,6 +423,7 @@ const Q_CONSENSUS_TIERS = db.prepare(`
     SUM(CASE WHEN t.status IN ('won','lost') THEN 1 ELSE 0 END) AS settled,
     SUM(CASE WHEN t.status = 'won' THEN 1 ELSE 0 END)     AS won,
     SUM(t.stake)                                          AS staked,
+    SUM(CASE WHEN t.status IN ('won','lost') THEN t.stake ELSE 0 END) AS settledStaked,
     SUM(CASE WHEN t.status IN ('won','lost') THEN t.realizedPL ELSE 0 END) AS realizedPL,
     AVG(CASE
       WHEN t.status IN ('won','lost') AND t.type = 'WIN' AND t.closingOdds > 0
@@ -416,7 +431,10 @@ const Q_CONSENSUS_TIERS = db.prepare(`
     END)                                                  AS avgClv
   FROM tickets t
   JOIN agreement a ON t.raceId = a.raceId AND t.selections = a.selections
-  WHERE t.strategyId IS NOT NULL AND t.status IN ('open','won','lost')
+  -- Agreement detection (the CTE) keeps shadow rows: a shadow ticket is
+  -- exactly the evidence that a second strategy agreed. The money/count
+  -- aggregation below must not double-count them, though.
+  WHERE t.strategyId IS NOT NULL AND t.shadow = 0 AND t.status IN ('open','won','lost')
   GROUP BY a.sCount
   ORDER BY a.sCount ASC
 `);
@@ -431,7 +449,7 @@ export function consensusTiers(): ConsensusTier[] {
     staked: r.staked || 0,
     realizedPL: r.realizedPL || 0,
     hitRate: r.settled > 0 ? (r.won || 0) / r.settled : null,
-    roi: r.staked > 0 ? (r.realizedPL || 0) / r.staked : null,
+    roi: r.settledStaked > 0 ? (r.realizedPL || 0) / r.settledStaked : null,
     avgClv: r.avgClv,
   }));
 }
@@ -461,6 +479,7 @@ export function pairConsensus(): PairConsensus[] {
       SUM(CASE WHEN t.status IN ('won','lost') THEN 1 ELSE 0 END) AS settled,
       SUM(CASE WHEN t.status = 'won' THEN 1 ELSE 0 END)     AS won,
       SUM(t.stake)                                          AS staked,
+      SUM(CASE WHEN t.status IN ('won','lost') THEN t.stake ELSE 0 END) AS settledStaked,
       SUM(CASE WHEN t.status IN ('won','lost') THEN t.realizedPL ELSE 0 END) AS realizedPL,
       AVG(CASE
         WHEN t.status IN ('won','lost') AND t.type = 'WIN' AND t.closingOdds > 0
@@ -468,7 +487,7 @@ export function pairConsensus(): PairConsensus[] {
       END)                                                  AS avgClv
     FROM tickets t
     JOIN agreement a ON t.raceId = a.raceId AND t.selections = a.selections
-    WHERE t.strategyId IS NOT NULL AND t.status IN ('open','won','lost')
+    WHERE t.strategyId IS NOT NULL AND t.shadow = 0 AND t.status IN ('open','won','lost')
     GROUP BY a.strats
     ORDER BY bets DESC
   `).all() as any[];
@@ -480,7 +499,7 @@ export function pairConsensus(): PairConsensus[] {
     staked: r.staked || 0,
     realizedPL: r.realizedPL || 0,
     hitRate: r.settled > 0 ? (r.won || 0) / r.settled : null,
-    roi: r.staked > 0 ? (r.realizedPL || 0) / r.staked : null,
+    roi: r.settledStaked > 0 ? (r.realizedPL || 0) / r.settledStaked : null,
     avgClv: r.avgClv,
   }));
 }
@@ -493,10 +512,11 @@ export function totals() {
       SUM(CASE WHEN status = 'won' THEN 1 ELSE 0 END)       AS won,
       SUM(CASE WHEN status IN ('open','won','lost') THEN stake ELSE 0 END) AS staked,
       SUM(CASE WHEN status IN ('won','lost') THEN realizedPL ELSE 0 END) AS realizedPL,
+      SUM(CASE WHEN status IN ('won','lost') THEN stake ELSE 0 END) AS settledStaked,
       MIN(CASE WHEN status IN ('open','won','lost') THEN placedAt END) AS firstBet,
       MAX(CASE WHEN status IN ('open','won','lost') THEN placedAt END) AS lastBet
     FROM tickets
-    WHERE strategyId IS NOT NULL
+    WHERE strategyId IS NOT NULL AND shadow = 0
   `).get() as any;
   return {
     bets: r.bets || 0,
@@ -505,7 +525,7 @@ export function totals() {
     staked: r.staked || 0,
     realizedPL: r.realizedPL || 0,
     hitRate: r.settled > 0 ? (r.won || 0) / r.settled : null,
-    roi: r.staked > 0 ? (r.realizedPL || 0) / r.staked : null,
+    roi: r.settledStaked > 0 ? (r.realizedPL || 0) / r.settledStaked : null,
     firstBetAt: r.firstBet ?? null,
     lastBetAt: r.lastBet ?? null,
   };

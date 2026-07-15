@@ -25,8 +25,11 @@ export async function GET(req: Request) {
     ? start + 86_400_000
     : new Date(y, m - 1, d + 1, 0, 0, 0, 0).getTime();
 
+  // !t.shadow: the calendar cell counts non-shadow bets only, and this list
+  // must contain exactly the bets that cell counted — a "46b" cell opening a
+  // 50-row table is the kind of mismatch that erodes trust in the numbers.
   const tickets: Ticket[] = Tickets.list()
-    .filter(t => t.strategyId != null && t.placedAt >= start && t.placedAt < end)
+    .filter(t => t.strategyId != null && !t.shadow && t.placedAt >= start && t.placedAt < end)
     .filter(t => t.status === "open" || t.status === "won" || t.status === "lost")
     .sort((a, b) => a.placedAt - b.placedAt);
 

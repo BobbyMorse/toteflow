@@ -31,7 +31,11 @@ interface StrategyStats {
 }
 
 function statsFor(strategyId: string, allTickets: Ticket[]): StrategyStats {
-  const tickets = allTickets.filter(t => t.strategyId === strategyId);
+  // !t.shadow: same exclusion the totals roll-up below applies. Shadow
+  // tickets (stake $0 attribution records) previously counted here but not
+  // in totals, so per-strategy rows didn't sum to the totals on the same
+  // page — and disagreed with Results/Analytics after those were fixed.
+  const tickets = allTickets.filter(t => t.strategyId === strategyId && !t.shadow);
   // Actual bets = anything that promoted past staging. Staged and aborted
   // tickets are decisions in flight or decisions not to bet — they shouldn't
   // count as placed bets.
@@ -42,6 +46,7 @@ function statsFor(strategyId: string, allTickets: Ticket[]): StrategyStats {
   const staged = tickets.filter(t => t.status === "staged");
   const aborted = tickets.filter(t => t.status === "aborted");
   const totalStaked = bets.reduce((a, t) => a + t.stake, 0);
+  const settledStaked = settled.reduce((a, t) => a + t.stake, 0);
   const realizedPL = settled.reduce((a, t) => a + (t.realizedPL ?? 0), 0);
   const capturedEV = bets.reduce((a, t) => a + (t.capturedEV * t.stake) / 100, 0);
   // CLV only meaningful for single-race WIN bets — closing snapshot captures
@@ -78,7 +83,10 @@ function statsFor(strategyId: string, allTickets: Ticket[]): StrategyStats {
     hitRate: settled.length ? won.length / settled.length : null,
     realizedPL,
     totalStaked,
-    roi: totalStaked ? realizedPL / totalStaked : null,
+    // ROI over settled stake — matches the totals roll-up and lib/analytics.
+    // Open bets have no realized outcome; their stake in the denominator
+    // made this number drift from every other ROI on the site intraday.
+    roi: settledStaked ? realizedPL / settledStaked : null,
     capturedEV,
     avgClv,
     avgClosingEV,
