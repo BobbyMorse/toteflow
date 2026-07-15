@@ -17,8 +17,6 @@ const tabs = [
 export default function Nav() {
   const pathname = usePathname();
   const connected = useToteflow(s => s.connected);
-  const sources = useToteflow(s => s.sources);
-  const live = sources.length > 0;
   return (
     <header className="sticky top-0 z-40 backdrop-blur-md bg-bg-0/80 border-b border-line">
       <StreamProvider />
@@ -31,17 +29,6 @@ export default function Nav() {
           </span>
         </Link>
         <div className="flex items-center gap-2 sm:gap-3 ml-auto sm:order-last">
-          <div className={clsx(
-            "flex items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] sm:text-[11px] font-mono uppercase tracking-wider",
-            live
-              ? "border-accent-overlay/40 bg-accent-overlay/10 text-accent-overlay"
-              : "border-accent-warn/40 bg-accent-warn/10 text-accent-warn animate-pulse",
-          )} title={live ? `Live data from ${sources.join(", ")}` : "No upstream provider responding"}>
-            <span className={clsx("w-1.5 h-1.5 rounded-full",
-              live ? "bg-accent-overlay" : "bg-accent-warn")}/>
-            <span className="hidden sm:inline">{live ? `Live · ${sources.join("+")}` : "Offline"}</span>
-            <span className="sm:hidden">{live ? "Live" : "Off"}</span>
-          </div>
           <div className="hidden sm:flex items-center gap-2 text-xs">
             <span className={clsx(
               "w-2 h-2 rounded-full",
