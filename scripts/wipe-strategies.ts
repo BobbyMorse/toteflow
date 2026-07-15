@@ -14,26 +14,26 @@
 import { db } from "../lib/db";
 
 // Strategies whose paper record is now invalid:
-//   - overlay-vs-ml family: strategy deleted (structurally -EV; see commit d9b4228)
-//   - tvg-baseline-harness/qh: model weight halved (0.30 → 0.15), so prior
-//     paper P&L was fit against the old formula and is no longer meaningful
+//   - dr-z-place family: rebuilt as the proper Ziemba & Hausch system (commit
+//     f4d13bf — breakage + $2.10 floor + own-bet pool impact, pool-maturity
+//     gate, fire-time re-gate, 14% cutoff). The old record (14 settled,
+//     -22% ROI) measured stage-time fill-lag EV that the new system never
+//     bets, so it says nothing about the new cohort.
+// Previously wiped here (kept for the log): overlay-vs-ml family (strategy
+// deleted, commit d9b4228), tvg-baseline-harness/qh (model weight halved).
 const TARGETS = [
-  "overlay-vs-ml",
-  "overlay-vs-ml-harness",
-  "overlay-vs-ml-qh",
-  "tvg-baseline-harness",
-  "tvg-baseline-qh",
+  "dr-z-place",
+  "dr-z-place-harness",
+  "dr-z-place-qh",
+  "dr-z-place-jumps",
 ];
 
 // Strategies whose config row can also be dropped (strategy no longer exists
 // in the registry at all). Kept separate from the ticket wipe because we
-// don't want to blow away tvg-baseline-harness/qh config — those strategies
-// still exist, they just got recalibrated.
-const CONFIG_TO_REMOVE = [
-  "overlay-vs-ml",
-  "overlay-vs-ml-harness",
-  "overlay-vs-ml-qh",
-];
+// don't want to blow away config for strategies that still exist and just
+// got reworked — the dr-z-place rows stay (they hold the migrated 14%
+// threshold).
+const CONFIG_TO_REMOVE: string[] = [];
 
 const confirm = process.argv.includes("--confirm");
 
@@ -46,9 +46,11 @@ const counts = db.prepare(
    ORDER BY strategyId, status`,
 ).all(...TARGETS) as Array<{ strategyId: string; status: string; n: number }>;
 
-const configHits = db.prepare(
-  `SELECT id FROM strategy_configs WHERE id IN (${CONFIG_TO_REMOVE.map(() => "?").join(",")})`,
-).all(...CONFIG_TO_REMOVE) as Array<{ id: string }>;
+const configHits = CONFIG_TO_REMOVE.length
+  ? db.prepare(
+      `SELECT id FROM strategy_configs WHERE id IN (${CONFIG_TO_REMOVE.map(() => "?").join(",")})`,
+    ).all(...CONFIG_TO_REMOVE) as Array<{ id: string }>
+  : [];
 
 console.log("Tickets to wipe:");
 if (counts.length === 0) {
@@ -76,9 +78,11 @@ if (!confirm) {
 
 const tx = db.transaction(() => {
   const t = db.prepare(`DELETE FROM tickets WHERE strategyId IN (${placeholders})`).run(...TARGETS);
-  const c = db.prepare(
-    `DELETE FROM strategy_configs WHERE id IN (${CONFIG_TO_REMOVE.map(() => "?").join(",")})`,
-  ).run(...CONFIG_TO_REMOVE);
+  const c = CONFIG_TO_REMOVE.length
+    ? db.prepare(
+        `DELETE FROM strategy_configs WHERE id IN (${CONFIG_TO_REMOVE.map(() => "?").join(",")})`,
+      ).run(...CONFIG_TO_REMOVE)
+    : { changes: 0 };
   return { tickets: t.changes, configs: c.changes };
 });
 
