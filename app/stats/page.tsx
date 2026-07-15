@@ -225,13 +225,78 @@ function parseDayLocal(s: string): Date {
   return new Date(y, (m ?? 1) - 1, d ?? 1);
 }
 
-function colorForPL(pl: number, maxAbs: number): string {
-  if (pl === 0 || maxAbs === 0) return "rgba(255,255,255,0.05)";
+// Cell fill + per-cell ink, chosen by COMPUTED contrast against the blended
+// background — not by eyeballing. High-profit cells get a bright fill; the
+// dim slate ink-2 that works on dark cells drops to ~1.5:1 contrast there
+// (the "+$1.3k day looks broken / data missing" report), and the green P/L
+// text disappears into a green fill. For each cell we blend the fill over
+// the panel surface, then pick whichever ink (light or near-black) wins on
+// WCAG contrast; the P/L value keeps its win/loss accent color only while
+// that accent still clears 4.5:1, else falls back to the neutral winner.
+const CELL_SURFACE = { r: 10, g: 14, b: 21 }; // bg-1 #0a0e15 behind the grid
+const FILL_PROFIT = { r: 16, g: 185, b: 129 };
+const FILL_LOSS = { r: 239, g: 68, b: 68 };
+const INK_LIGHT = "#e7edf7"; // ink-0
+const INK_DARK = "#0b1220";
+const ACCENT_PROFIT = "#22c55e";
+const ACCENT_LOSS = "#ff3b3b";
+
+function relLum(r: number, g: number, b: number): number {
+  const lin = (v: number) => {
+    v /= 255;
+    return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+const LUM_LIGHT = relLum(0xe7, 0xed, 0xf7);
+const LUM_DARK = relLum(0x0b, 0x12, 0x20);
+const LUM_ACCENT_PROFIT = relLum(0x22, 0xc5, 0x5e);
+const LUM_ACCENT_LOSS = relLum(0xff, 0x3b, 0x3b);
+
+function contrast(a: number, b: number): number {
+  const [hi, lo] = a > b ? [a, b] : [b, a];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+interface CellPaint {
+  bg: string;
+  ink: string;        // day number + bet count
+  inkMuted: string;   // same hue, softer — bet count
+  plInk: string;      // the P/L value
+  darkInk: boolean;   // true when the cell is bright enough to need dark text
+}
+
+function paintForPL(pl: number, maxAbs: number): CellPaint {
+  if (pl === 0 || maxAbs === 0) {
+    return {
+      bg: "rgba(255,255,255,0.05)",
+      ink: "#9aa6b9", inkMuted: "#5c6678",
+      plInk: pl >= 0 ? ACCENT_PROFIT : ACCENT_LOSS,
+      darkInk: false,
+    };
+  }
   const intensity = Math.min(1, Math.abs(pl) / maxAbs);
   const alpha = 0.15 + intensity * 0.65;
-  return pl > 0
-    ? `rgba(16,185,129,${alpha.toFixed(3)})`
-    : `rgba(239,68,68,${alpha.toFixed(3)})`;
+  const fill = pl > 0 ? FILL_PROFIT : FILL_LOSS;
+  const bgLum = relLum(
+    alpha * fill.r + (1 - alpha) * CELL_SURFACE.r,
+    alpha * fill.g + (1 - alpha) * CELL_SURFACE.g,
+    alpha * fill.b + (1 - alpha) * CELL_SURFACE.b,
+  );
+  const darkInk = contrast(LUM_DARK, bgLum) > contrast(LUM_LIGHT, bgLum);
+  const accent = pl > 0 ? ACCENT_PROFIT : ACCENT_LOSS;
+  const accentLum = pl > 0 ? LUM_ACCENT_PROFIT : LUM_ACCENT_LOSS;
+  // Solid inks only — semi-transparent or mid-tone "muted" inks fall under
+  // 2.2:1 on saturated mid-bright fills (audited). Hierarchy between the day
+  // number, bet count, and P/L value comes from size and weight instead.
+  const neutral = darkInk ? INK_DARK : INK_LIGHT;
+  return {
+    bg: `rgba(${fill.r},${fill.g},${fill.b},${alpha.toFixed(3)})`,
+    ink: neutral,
+    inkMuted: neutral,
+    plInk: !darkInk && contrast(accentLum, bgLum) >= 4.5 ? accent : neutral,
+    darkInk,
+  };
 }
 
 function CalendarGrid({
@@ -282,8 +347,7 @@ function CalendarGrid({
           const isToday = cell.day === today;
           const isSelected = selectedDay === cell.day;
           const hasBets = cell.bets > 0;
-          const bg = hasBets ? colorForPL(cell.realizedPL, maxAbs) : "transparent";
-          const plCls = cell.realizedPL >= 0 ? "text-accent-overlay" : "text-accent-steam";
+          const paint = paintForPL(hasBets ? cell.realizedPL : 0, maxAbs);
           const plCompact = Math.abs(cell.realizedPL) >= 1000
             ? `${(cell.realizedPL / 1000).toFixed(1)}k`
             : cell.realizedPL.toFixed(0);
@@ -296,23 +360,31 @@ function CalendarGrid({
               title={hasBets
                 ? `${cell.day} · ${cell.bets} bets · ${cell.realizedPL >= 0 ? "+" : ""}$${cell.realizedPL.toFixed(0)}`
                 : `${cell.day} — no bets`}
-              style={{ background: bg }}
+              style={{ background: hasBets ? paint.bg : "transparent" }}
               className={clsx(
                 "aspect-square sm:aspect-[7/5] rounded-md p-1 sm:p-2 flex flex-col justify-between text-left border transition",
                 "min-h-[44px] sm:min-h-[54px] overflow-hidden",
                 isSelected
                   ? "border-accent-cyan ring-1 ring-accent-cyan/40"
-                  : hasBets
-                    ? "border-white/10 hover:border-white/30"
-                    : "border-white/5",
+                  : isToday
+                    ? "border-accent-cyan/60"
+                    : hasBets
+                      ? "border-white/10 hover:border-white/30"
+                      : "border-white/5",
                 !hasBets && "cursor-default opacity-60",
               )}
             >
               <div className="flex items-baseline justify-between gap-0.5">
-                <span className={clsx(
-                  "font-mono text-[10px] sm:text-[11px] tabular-nums leading-none",
-                  isToday ? "text-accent-cyan font-semibold" : "text-ink-2",
-                )}>
+                <span
+                  className={clsx(
+                    "font-mono text-[10px] sm:text-[11px] tabular-nums leading-none",
+                    (isToday || paint.darkInk) && "font-semibold",
+                  )}
+                  // Today keeps its cyan number only while the cell is dark
+                  // enough to read it; on bright fills the cyan border above
+                  // carries the marker and the number uses the contrast ink.
+                  style={{ color: isToday && !paint.darkInk ? "#22d3ee" : hasBets ? paint.ink : "#5c6678" }}
+                >
                   {monthLabel ? (
                     <>
                       <span className="hidden sm:inline">{monthLabel} </span>
@@ -321,13 +393,15 @@ function CalendarGrid({
                   ) : dayNum}
                 </span>
                 {hasBets && (
-                  <span className="font-mono text-[9px] text-ink-2 tabular-nums leading-none hidden sm:inline">
+                  <span className="font-mono text-[9px] tabular-nums leading-none hidden sm:inline"
+                    style={{ color: paint.inkMuted }}>
                     {cell.bets}b
                   </span>
                 )}
               </div>
               {hasBets ? (
-                <div className={clsx("font-mono tabular-nums font-semibold text-right leading-none", plCls)}>
+                <div className="font-mono tabular-nums font-semibold text-right leading-none"
+                  style={{ color: paint.plInk }}>
                   <span className="text-[10px] sm:text-sm">
                     {cell.realizedPL >= 0 ? "+" : ""}${plCompact}
                   </span>
