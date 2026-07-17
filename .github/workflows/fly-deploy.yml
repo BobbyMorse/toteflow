@@ -4,13 +4,20 @@ on:
   push:
     branches: [main]
 
+# cancel-in-progress: a hung deploy must not wedge the queue. Superseding an
+# in-flight deploy with the newer commit is the right call here — we always
+# want main's latest to be what's live, and a stuck run (as happened
+# 2026-07-17, blocking the queue 4h+) should be abandoned, not waited on.
 concurrency:
   group: fly-deploy
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Backstop so a wedged flyctl deploy self-cancels instead of hanging for
+    # hours; a remote-only build well under this normally finishes in ~2-3 min.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
