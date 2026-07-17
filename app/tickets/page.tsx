@@ -1320,18 +1320,29 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
           ) : (
             <>
               <span className="uppercase tracking-wider">finish:</span>
-              {finishOrder.map((p, i) => (
-                <span key={i} className={clsx(
-                  myPick && p === myPick
-                    ? (t.status === "won" ? "text-accent-overlay font-semibold" : "text-accent-warn font-semibold")
-                    : "text-ink-1",
-                )}>
-                  {i + 1}. #{p}
-                </span>
-              ))}
-              {myFinishLabel
+              {finishOrder.map((p, i) => {
+                // Highlight every runner we picked, not just selections[0].
+                // Won ticket → green. Lost: yellow when the pick landed in the
+                // exact slot we bet it for (selection order = finish order),
+                // red when it hit the board in the wrong slot. Picks that
+                // finished off the board simply never appear here.
+                const selIdx = t.selections.indexOf(p);
+                return (
+                  <span key={i} className={clsx(
+                    selIdx >= 0
+                      ? clsx("font-semibold",
+                          t.status === "won" ? "text-accent-overlay"
+                          : selIdx === i ? "text-accent-warn"
+                          : "text-accent-steam")
+                      : "text-ink-1",
+                  )}>
+                    {i + 1}. #{p}
+                  </span>
+                );
+              })}
+              {t.selections.length === 1 && (myFinishLabel
                 ? <span className="text-ink-2">· pick #{myPick} → {myFinishLabel}</span>
-                : (myPick && <span className="text-ink-2">· pick #{myPick} off board</span>)}
+                : (myPick && <span className="text-ink-2">· pick #{myPick} off board</span>))}
             </>
           )}
           <VerifyLinksInline ticket={t} settled={settled} />
