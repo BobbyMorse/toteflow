@@ -1178,9 +1178,6 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
             {t.stagedEV != null && Math.abs(t.stagedEV - t.capturedEV) > 1 && (
               <div className="mt-1">staged at {t.stagedEV >= 0 ? "+" : ""}{t.stagedEV.toFixed(1)}% EV — price moved before fire</div>
             )}
-            {t.capturedEV < 0 && (
-              <div className="text-accent-steam mt-1">⚠ Fired with negative EV ({t.capturedEV.toFixed(1)}%)</div>
-            )}
           </div>
         )}
       </div>
@@ -1287,14 +1284,11 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
           )}
         </span>
       </div>
-      {(t.reason || t.capturedEV < 0) && (
+      {t.reason && (
         <div className="hidden sm:block mt-0.5 sm:ml-[250px] text-[11px] text-ink-2 italic">
           {t.reason}
           {t.stagedEV != null && Math.abs(t.stagedEV - t.capturedEV) > 1 && (
             <div className="mt-0.5">staged at {t.stagedEV >= 0 ? "+" : ""}{t.stagedEV.toFixed(1)}% EV — price moved before fire</div>
-          )}
-          {t.capturedEV < 0 && (
-            <div className="text-accent-steam mt-0.5">⚠ Fired with negative EV ({t.capturedEV.toFixed(1)}%)</div>
           )}
         </div>
       )}
