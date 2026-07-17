@@ -306,13 +306,17 @@ class Grader {
       return;
     }
 
+    // Shadow tickets carry stake 0 (bankroll dedup) but settle hypothetically
+    // at the stake the strategy would have bet, recorded in shadowPL so
+    // overlapping-pick strategies stay measurable. Real realizedPL stays 0.
+    const stakeForPayout = t.shadow ? (t.shadowStake ?? 0) : t.stake;
     let won = false, payout = 0;
     let payoutSource: Ticket["payoutSource"];
     if (t.type === "WIN") {
       if (myFinish?.finishPosition === 1 && myFinish.winPayoff && myFinish.betAmount) {
         won = true;
         // TVG payoff is per `betAmount` (usually $2). Scale to our stake.
-        payout = (t.stake / myFinish.betAmount) * myFinish.winPayoff;
+        payout = (stakeForPayout / myFinish.betAmount) * myFinish.winPayoff;
         payoutSource = "tote";
       }
     } else if (t.type === "PLACE") {
@@ -320,7 +324,7 @@ class Grader {
       if (myFinish?.finishPosition && myFinish.finishPosition <= 2
           && myFinish.placePayoff && myFinish.betAmount) {
         won = true;
-        payout = (t.stake / myFinish.betAmount) * myFinish.placePayoff;
+        payout = (stakeForPayout / myFinish.betAmount) * myFinish.placePayoff;
         payoutSource = "tote";
       }
     } else if (t.type === "SHOW") {
@@ -328,7 +332,7 @@ class Grader {
       if (myFinish?.finishPosition && myFinish.finishPosition <= 3
           && myFinish.showPayoff && myFinish.betAmount) {
         won = true;
-        payout = (t.stake / myFinish.betAmount) * myFinish.showPayoff;
+        payout = (stakeForPayout / myFinish.betAmount) * myFinish.showPayoff;
         payoutSource = "tote";
       }
     } else if (t.type === "EXACTA" || t.type === "TRIFECTA") {
@@ -346,7 +350,7 @@ class Grader {
         // Box combos = permutations of the selections; each carries an equal
         // slice of the stake. 2-horse exacta box = 2, 3-horse trifecta box = 6.
         const combos = t.type === "EXACTA" ? 2 : 6;
-        const perCombo = t.stake / combos;
+        const perCombo = stakeForPayout / combos;
         const real = realPayout(
           race, PAYOFF_CODE[t.type]!, perCombo,
           combo => combo.length === need && combo.every(p => coveredSet.has(p)),
@@ -355,12 +359,13 @@ class Grader {
           payout = real;
           payoutSource = "tote";
         } else {
-          payout = t.potentialPayout > 0 ? t.potentialPayout : t.stake;
+          payout = t.potentialPayout > 0 ? t.potentialPayout : stakeForPayout;
           payoutSource = "estimated";
         }
       }
     }
-    const realizedPL = won ? payout - t.stake : -t.stake;
+    const plAtStake = won ? payout - stakeForPayout : -stakeForPayout;
+    const realizedPL = t.shadow ? 0 : plAtStake;
     const closingOdds = Closing.oddsFor(t.raceId, selected);
     // Closing EV grades the bet WE locked in, not a hypothetical bet at the
     // closing price. Scale captured EV by the odds drift — this holds the
@@ -406,6 +411,7 @@ class Grader {
       status: won ? "won" : "lost",
       settledAt: Date.now(),
       realizedPL,
+      ...(t.shadow ? { shadowPL: plAtStake } : {}),
       winners: finishOrder,
       closingOdds,
       closingEV,
@@ -486,6 +492,7 @@ class Grader {
     // stake evenly across combos; exactly one combo can hit). Falls back to
     // the book-time estimate when the feed exposes no payoff (or for J6,
     // which has no mapped payoff code).
+    const stakeForPayout = t.shadow ? (t.shadowStake ?? 0) : t.stake;
     let payout = 0;
     let payoutSource: Ticket["payoutSource"];
     if (won) {
@@ -494,7 +501,7 @@ class Grader {
       const lastRace = byTrackRace.get(`${t.trackCode}-${lastLeg.raceNumber}`);
       const code = PAYOFF_CODE[t.type];
       const combos = legs.reduce((a, l) => a * Math.max(1, l.selections.length), 1);
-      const perCombo = t.stake / combos;
+      const perCombo = stakeForPayout / combos;
       const real = lastRace && code
         ? realPayout(
             lastRace, code, perCombo,
@@ -510,13 +517,15 @@ class Grader {
         payoutSource = "estimated";
       }
     }
-    const realizedPL = won ? payout - t.stake : -t.stake;
+    const plAtStake = won ? payout - stakeForPayout : -stakeForPayout;
+    const realizedPL = t.shadow ? 0 : plAtStake;
     const winnersFlat = outcomes.map(o => o.winner!).join("-");
 
     Tickets.update(t.id, {
       status: won ? "won" : "lost",
       settledAt: Date.now(),
       realizedPL,
+      ...(t.shadow ? { shadowPL: plAtStake } : {}),
       winners: outcomes.map(o => o.winner!),
       ...(won ? { payoutSource } : {}),
     });

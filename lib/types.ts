@@ -144,6 +144,16 @@ export interface Ticket {
   // book-time payout estimate (directional only — races whose payoff feed was
   // empty, or tickets settled before real-payoff grading landed).
   payoutSource?: "tote" | "estimated";
+  // Hypothetical accounting for shadow tickets. shadowStake is the stake the
+  // strategy WOULD have bet (its configured stake at promote time); shadowPL
+  // is the settled P&L at that stake. Real stake/realizedPL stay 0 on shadow
+  // tickets — these fields exist so per-strategy attribution can be measured
+  // for strategies whose picks overlap (e.g. tvg-steam vs tvg-baseline)
+  // without double-counting the canonical bankroll aggregates, which keep
+  // excluding shadow. Forward-only: shadow tickets settled before 2026-07-17
+  // have neither field.
+  shadowStake?: number;
+  shadowPL?: number;
   // True when another AUTO ticket already covered this (raceId, type, selections).
   // Shadow tickets keep full strategy attribution but carry stake/payout/P&L = 0
   // so we don't double-debit the bankroll when two strategies agree.

@@ -80,3 +80,30 @@ export const tvgBaselineQHStrategy: Strategy = build(
 export const tvgBaselineJumpsStrategy: Strategy = build(
   "tvg-baseline-jumps", "TVG Model Baseline (Jumps)", ["jumps"], calibrateTVGBaselineJumpsTrueP,
 );
+
+// Steam-confirm variants: same divergence entry as tvg-baseline, but only
+// FIRE when the market has partially confirmed the pick — live odds down
+// 15-35% from stage-time odds. Empirical basis (2026-07-17 audit, 1,136
+// settled WIN bets, tote-settled): stage→fire crush 15-35% cohort ran +56.5%
+// ROI (n=132; tvg-baseline* subset +61.5%, n=106), while >35% crush was
+// negative (payout destroyed even though win% keeps climbing) and un-crushed
+// picks hovered near breakeven. Winners' median fire→close CLV was +58.6%
+// vs +12.5% for losers — the model's live picks attract late money, and the
+// moderate-crush window is where confirmation exists but price still pays.
+// Forward test of a post-hoc cohort finding — expect regression toward the
+// mean; the point of a separate strategy id is measuring exactly that.
+const STEAM_BAND: readonly [number, number] = [15, 35];
+const STEAM_THESIS =
+  "Stage on model-market divergence, fire only once late money has moved the pick 15-35% toward the model's price.";
+
+export const tvgSteamStrategy: Strategy = {
+  ...build("tvg-steam", "TVG Steam Confirm", ["thoroughbred"], calibrateTVGBaselineTrueP),
+  thesis: STEAM_THESIS,
+  fireCrushBand: STEAM_BAND,
+};
+
+export const tvgSteamHarnessStrategy: Strategy = {
+  ...build("tvg-steam-harness", "TVG Steam Confirm (Harness)", ["harness"], calibrateTVGBaselineHarnessTrueP),
+  thesis: STEAM_THESIS,
+  fireCrushBand: STEAM_BAND,
+};

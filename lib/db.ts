@@ -208,6 +208,12 @@ function applySchema(db: Database.Database): void {
   if (!ticketCols.has("stagedEV")) {
     db.exec("ALTER TABLE tickets ADD COLUMN stagedEV REAL");
   }
+  if (!ticketCols.has("shadowStake")) {
+    db.exec("ALTER TABLE tickets ADD COLUMN shadowStake REAL");
+  }
+  if (!ticketCols.has("shadowPL")) {
+    db.exec("ALTER TABLE tickets ADD COLUMN shadowPL REAL");
+  }
 
   const v = (db.prepare("SELECT value FROM meta WHERE key = 'schemaVersion'").get() as { value: string } | undefined)?.value;
   if (!v) {

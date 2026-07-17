@@ -267,6 +267,38 @@ class Engine {
       // blend is overconfident. Using runner.evPercent here produced ticket
       // rows showing +60% when the strategy's reason string said +20%.
       const originStrategy = strategies.find(s => s.id === t.strategyId) ?? null;
+
+      // Steam-confirm gate (opt-in via Strategy.fireCrushBand): fire only
+      // when the live price has fallen into the band relative to stage-time
+      // odds (t.capturedOdds still holds the match-time odds here — it is
+      // only overwritten at promote). Below the band: not confirmed yet —
+      // keep holding unless this is the T-15s lock. Above: payout destroyed.
+      if (originStrategy?.fireCrushBand && !isExoticInRace && t.capturedOdds > 1) {
+        const [bandLo, bandHi] = originStrategy.fireCrushBand;
+        const crushPct = ((t.capturedOdds - runner.currentOdds) / t.capturedOdds) * 100;
+        if (crushPct > bandHi) {
+          Tickets.update(t.id, {
+            status: "aborted",
+            abortedAt: now,
+            abortReason: `steam gate: price crushed ${crushPct.toFixed(0)}% > ${bandHi}% band max — payout destroyed`,
+          });
+          aborted++;
+          this.note(`[${t.strategyId}] ABORT ${t.raceId} #${selection} · steam gate: crushed ${crushPct.toFixed(0)}% > ${bandHi}%`);
+          continue;
+        }
+        if (crushPct < bandLo) {
+          if (decision.status !== "LOCKED") continue; // hold — steam may still arrive
+          Tickets.update(t.id, {
+            status: "aborted",
+            abortedAt: now,
+            abortReason: `steam gate: no market confirmation by lock (${crushPct.toFixed(0)}% < ${bandLo}% band min)`,
+          });
+          aborted++;
+          this.note(`[${t.strategyId}] ABORT ${t.raceId} #${selection} · steam gate: only ${crushPct.toFixed(0)}% crush at lock`);
+          continue;
+        }
+      }
+
       let calibratedEv: number | null = null;
       let calibratedReason: string | null = null;
       let calibratedTrueP: number | null = null;
@@ -334,6 +366,7 @@ class Engine {
         Tickets.update(t.id, {
           status: "open",
           stake: liveStake,
+          shadowStake: isShadow ? stagedStake : undefined,
           capturedOdds: liveOdds,
           // capturedEV stays at the strategy's match-time exotic-pool EV;
           // there's no honest "live EV" for an exacta from per-runner data.
@@ -431,6 +464,7 @@ class Engine {
       Tickets.update(t.id, {
         status: "open",
         stake: liveStake,
+        shadowStake: isShadow ? baseStake : undefined,
         capturedOdds: liveOdds,
         capturedEV: fireEv,
         stagedEV: t.capturedEV,

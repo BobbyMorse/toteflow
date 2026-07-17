@@ -4,6 +4,8 @@ import {
   tvgBaselineHarnessStrategy,
   tvgBaselineQHStrategy,
   tvgBaselineJumpsStrategy,
+  tvgSteamStrategy,
+  tvgSteamHarnessStrategy,
 } from "./tvg-baseline";
 import { favFadeStrategy } from "./fav-fade";
 import { loneSpeedStrategy } from "./lone-speed";
@@ -56,6 +58,8 @@ export const strategies: Strategy[] = [
   tvgBaselineHarnessStrategy,
   tvgBaselineQHStrategy,
   tvgBaselineJumpsStrategy,
+  tvgSteamStrategy,
+  tvgSteamHarnessStrategy,
   ...harnessVariants,
   ...quarterHorseVariants,
   ...jumpsVariants,

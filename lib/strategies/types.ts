@@ -74,6 +74,15 @@ export interface Strategy {
   // exists. Opt-in only — WIN-model strategies deliberately do NOT re-gate
   // at fire (see the drift-gate removal note in autobook.ts).
   refireAtThreshold?: boolean;
+  // Steam-confirmation fire gate for single-runner WIN strategies: [lo, hi]
+  // as percent of stage-time odds the price must have FALLEN by fire time.
+  // Below lo the ticket keeps waiting (no market confirmation yet — only
+  // aborts if still below lo at the T-15s lock); above hi it aborts (the
+  // crush destroyed the payout). Distinct from the removed blanket drift
+  // gate: this is a strategy's explicit entry thesis (bet only when the
+  // market has partially confirmed the model's pick), not a re-pricing of
+  // every strategy's EV by a historical crush factor.
+  fireCrushBand?: readonly [number, number];
 }
 
 export interface StrategyConfig {

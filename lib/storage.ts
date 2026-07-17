@@ -50,6 +50,9 @@ declare global {
 const defaultPerStrategy: Record<string, StrategyConfig> = {
   // Enabled — pure-predictive but showing real CLV signal in paper data
   "tvg-baseline":   { enabled: true,  evThreshold: 10, stake: 20, fireAtPhase: "action" },
+  // Steam-confirm: tvg-baseline entry + 15-35% crush fire gate (see
+  // lib/strategies/tvg-baseline.ts for the cohort audit behind the band).
+  "tvg-steam":      { enabled: true,  evThreshold: 10, stake: 20, fireAtPhase: "action" },
   // Disabled — never validated, no signal yet
   "lone-speed":     { enabled: false, evThreshold: 5,  stake: 20, fireAtPhase: "action" },
   "always-fav":     { enabled: false, evThreshold: -100, stake: 20, fireAtPhase: "action" },
@@ -115,6 +118,8 @@ function rowToTicket(row: any): Ticket {
     closingEVRaw: row.closingEVRaw ?? undefined,
     capturedTrueP: row.capturedTrueP ?? undefined,
     shadow: row.shadow ? true : undefined,
+    shadowStake: row.shadowStake ?? undefined,
+    shadowPL: row.shadowPL ?? undefined,
     payoutSource: row.payoutSource ?? undefined,
     legs: row.legs ? JSON.parse(row.legs) : undefined,
     stagedAt: row.stagedAt ?? undefined,
@@ -128,13 +133,13 @@ const stmtInsertTicket = db.prepare(`
     id, raceId, trackCode, trackName, raceNumber, horseName, type, selections,
     stake, potentialPayout, capturedEV, stagedEV, capturedEVRaw, capturedTrueP, capturedOdds, placedAt, postTime,
     status, mode, strategyId, reason, settledAt, realizedPL, winners,
-    closingOdds, closingEV, closingEVRaw, shadow, legs,
+    closingOdds, closingEV, closingEVRaw, shadow, shadowStake, shadowPL, legs,
     stagedAt, abortedAt, abortReason, payoutSource
   ) VALUES (
     @id, @raceId, @trackCode, @trackName, @raceNumber, @horseName, @type, @selections,
     @stake, @potentialPayout, @capturedEV, @stagedEV, @capturedEVRaw, @capturedTrueP, @capturedOdds, @placedAt, @postTime,
     @status, @mode, @strategyId, @reason, @settledAt, @realizedPL, @winners,
-    @closingOdds, @closingEV, @closingEVRaw, @shadow, @legs,
+    @closingOdds, @closingEV, @closingEVRaw, @shadow, @shadowStake, @shadowPL, @legs,
     @stagedAt, @abortedAt, @abortReason, @payoutSource
   )
 `);
@@ -166,6 +171,8 @@ const stmtUpdateTicket = db.prepare(`
     closingEV       = @closingEV,
     closingEVRaw    = @closingEVRaw,
     shadow          = @shadow,
+    shadowStake     = @shadowStake,
+    shadowPL        = @shadowPL,
     stagedAt        = @stagedAt,
     abortedAt       = @abortedAt,
     abortReason     = @abortReason,
@@ -223,6 +230,8 @@ function ticketToRow(t: Ticket): Record<string, unknown> {
     closingEV: t.closingEV ?? null,
     closingEVRaw: t.closingEVRaw ?? null,
     shadow: t.shadow ? 1 : 0,
+    shadowStake: t.shadowStake ?? null,
+    shadowPL: t.shadowPL ?? null,
     legs: t.legs ? JSON.stringify(t.legs) : null,
     stagedAt: t.stagedAt ?? null,
     abortedAt: t.abortedAt ?? null,
@@ -462,6 +471,8 @@ export const Tickets = {
       closingEV: t.closingEV ?? null,
       closingEVRaw: t.closingEVRaw ?? null,
       shadow: t.shadow ? 1 : 0,
+      shadowStake: t.shadowStake ?? null,
+      shadowPL: t.shadowPL ?? null,
       stagedAt: t.stagedAt ?? null,
       abortedAt: t.abortedAt ?? null,
       abortReason: t.abortReason ?? null,
