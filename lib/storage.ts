@@ -98,6 +98,7 @@ function rowToTicket(row: any): Ticket {
     stake: row.stake,
     potentialPayout: row.potentialPayout,
     capturedEV: row.capturedEV,
+    stagedEV: row.stagedEV ?? undefined,
     capturedOdds: row.capturedOdds,
     placedAt: row.placedAt,
     postTime: row.postTime ?? undefined,
@@ -125,13 +126,13 @@ function rowToTicket(row: any): Ticket {
 const stmtInsertTicket = db.prepare(`
   INSERT INTO tickets (
     id, raceId, trackCode, trackName, raceNumber, horseName, type, selections,
-    stake, potentialPayout, capturedEV, capturedEVRaw, capturedTrueP, capturedOdds, placedAt, postTime,
+    stake, potentialPayout, capturedEV, stagedEV, capturedEVRaw, capturedTrueP, capturedOdds, placedAt, postTime,
     status, mode, strategyId, reason, settledAt, realizedPL, winners,
     closingOdds, closingEV, closingEVRaw, shadow, legs,
     stagedAt, abortedAt, abortReason, payoutSource
   ) VALUES (
     @id, @raceId, @trackCode, @trackName, @raceNumber, @horseName, @type, @selections,
-    @stake, @potentialPayout, @capturedEV, @capturedEVRaw, @capturedTrueP, @capturedOdds, @placedAt, @postTime,
+    @stake, @potentialPayout, @capturedEV, @stagedEV, @capturedEVRaw, @capturedTrueP, @capturedOdds, @placedAt, @postTime,
     @status, @mode, @strategyId, @reason, @settledAt, @realizedPL, @winners,
     @closingOdds, @closingEV, @closingEVRaw, @shadow, @legs,
     @stagedAt, @abortedAt, @abortReason, @payoutSource
@@ -152,8 +153,10 @@ const stmtUpdateTicket = db.prepare(`
     stake           = @stake,
     capturedOdds    = @capturedOdds,
     capturedEV      = @capturedEV,
+    stagedEV        = @stagedEV,
     capturedEVRaw   = @capturedEVRaw,
     capturedTrueP   = @capturedTrueP,
+    reason          = @reason,
     potentialPayout = @potentialPayout,
     placedAt        = @placedAt,
     settledAt       = @settledAt,
@@ -203,6 +206,7 @@ function ticketToRow(t: Ticket): Record<string, unknown> {
     stake: t.stake,
     potentialPayout: t.potentialPayout,
     capturedEV: t.capturedEV,
+    stagedEV: t.stagedEV ?? null,
     capturedEVRaw: t.capturedEVRaw ?? null,
     capturedTrueP: t.capturedTrueP ?? null,
     capturedOdds: t.capturedOdds,
@@ -303,6 +307,45 @@ function hydrate(): Store {
   // to ~-takeout regardless of our captured price). The scaled-from-fire
   // approach is honest: same horse, same model probability, just rescaled
   // payout. Cheap + idempotent.
+  // One-time-per-row backfill: WIN tickets whose stored capturedEV is stale.
+  // Before the fireEv fix in autobook, a promote whose fire-time re-eval no
+  // longer endorsed the pick stored the STAGED EV (priced at stage-time odds)
+  // next to the FIRE odds — producing impossible rows like "P=33.7% @ 8/5 →
+  // EV +17%" (the +17% was priced at 3/1). Detect rows where capturedEV
+  // can't be reproduced from (capturedTrueP, capturedOdds) at ANY plausible
+  // WIN takeout, preserve the stale value in stagedEV, and recompute
+  // capturedEV at the 0.16 fallback (real takeout isn't persisted — same
+  // compromise as the calibration backfill below). Runs BEFORE the closingEV
+  // reconcile so closing EVs re-derive from the honest value on the same
+  // boot. Idempotent: after the first pass the row is inside the plausible
+  // band, and stagedEV != null guards against re-touching.
+  {
+    const stmtBackfillStale = db.prepare(
+      "UPDATE tickets SET capturedEV = ?, stagedEV = ? WHERE id = ?",
+    );
+    const FALLBACK_TAKEOUT = 0.16;
+    // WIN-pool takeout worldwide spans ~0.10 (GB/IE) to ~0.20 (JP).
+    const TAKEOUT_LO = 0.10, TAKEOUT_HI = 0.22;
+    let n = 0;
+    for (const t of tickets) {
+      if (t.type !== "WIN") continue;
+      if (t.status !== "open" && t.status !== "won" && t.status !== "lost") continue;
+      if (t.stagedEV != null) continue;
+      if (t.capturedTrueP == null || !(t.capturedOdds > 1)) continue;
+      const evLo = evPercentFromTrueP(t.capturedTrueP, t.capturedOdds, TAKEOUT_HI);
+      const evHi = evPercentFromTrueP(t.capturedTrueP, t.capturedOdds, TAKEOUT_LO);
+      // Consistent at some plausible takeout (±1pp rounding slack) — leave it.
+      if (t.capturedEV >= evLo - 1 && t.capturedEV <= evHi + 1) continue;
+      const honestEV = evPercentFromTrueP(t.capturedTrueP, t.capturedOdds, FALLBACK_TAKEOUT);
+      const staleEV = t.capturedEV;
+      t.stagedEV = staleEV;
+      t.capturedEV = honestEV;
+      stmtBackfillStale.run(honestEV, staleEV, t.id);
+      n++;
+    }
+    if (n > 0) console.log(`[storage] repriced ${n} WIN tickets whose capturedEV was staged-odds stale (old value kept in stagedEV)`);
+  }
+
   {
     const stmtBackfill = db.prepare(
       "UPDATE tickets SET closingEV = ?, closingEVRaw = ? WHERE id = ?",
@@ -406,8 +449,10 @@ export const Tickets = {
       stake: t.stake,
       capturedOdds: t.capturedOdds,
       capturedEV: t.capturedEV,
+      stagedEV: t.stagedEV ?? null,
       capturedEVRaw: t.capturedEVRaw ?? null,
       capturedTrueP: t.capturedTrueP ?? null,
+      reason: t.reason ?? null,
       potentialPayout: t.potentialPayout,
       placedAt: t.placedAt,
       settledAt: t.settledAt ?? null,

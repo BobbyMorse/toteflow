@@ -99,6 +99,11 @@ export interface Ticket {
   potentialPayout: number;
   capturedEV: number;
   capturedOdds: number;
+  // Strategy EV at stage (match) time, frozen when the ticket is promoted.
+  // capturedEV is the fire-time value; when the price moves between stage
+  // and fire the two diverge, and the gap is the stage→fire EV drift.
+  // Optional because it was added after some rows were written.
+  stagedEV?: number;
   // Model-estimated true win probability at fire time. Frozen alongside
   // capturedEV / capturedOdds so the UI can show model-prob drift separately
   // from market-odds drift — the two move for different reasons (odds =

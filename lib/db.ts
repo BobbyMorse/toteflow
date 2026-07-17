@@ -205,6 +205,9 @@ function applySchema(db: Database.Database): void {
   if (!ticketCols.has("payoutSource")) {
     db.exec("ALTER TABLE tickets ADD COLUMN payoutSource TEXT");
   }
+  if (!ticketCols.has("stagedEV")) {
+    db.exec("ALTER TABLE tickets ADD COLUMN stagedEV REAL");
+  }
 
   const v = (db.prepare("SELECT value FROM meta WHERE key = 'schemaVersion'").get() as { value: string } | undefined)?.value;
   if (!v) {

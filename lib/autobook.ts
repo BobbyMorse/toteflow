@@ -285,6 +285,12 @@ class Engine {
       // Fall back to the staged (strategy-calibrated) EV if the strategy
       // no longer matches — never fall back to runner.evPercent, which is
       // the uncalibrated adapter value we're specifically avoiding.
+      // NOTE: liveEv is the GATING value only (timer floor / fire floor).
+      // The stale-staged fallback is deliberate there: re-eval returns null
+      // whenever the pick's live EV goes non-positive, so gating on a
+      // recomputed value would re-create the removed drift gate (which
+      // blocked a +11.9% ROI cohort). What gets STORED as capturedEV is
+      // recomputed honestly at fire odds below (fireEv).
       const liveEv = calibratedEv ?? t.capturedEV;
       const liveEvRaw = runner.evPercentRaw;
       // CRITICAL: If we're using a re-evaluated EV from the strategy, we MUST
@@ -304,6 +310,19 @@ class Engine {
         // Fallback: calibrate the current runner's blend
         liveTrueP = strategyCalibratedTrueP(t.strategyId, runner.truePWin, liveMarketP);
       }
+      // Honest fire-time EV for STORAGE. When re-eval fails (price moved and
+      // the strategy no longer endorses the pick), liveEv is the staged EV at
+      // stage-time odds — storing it next to fire odds produced impossible
+      // rows like "P=33.7% @ 8/5 → EV +17%" (the +17% was priced at 3/1).
+      // Recompute from the trueP we're about to store so the persisted
+      // (capturedTrueP, capturedOdds, capturedEV) triple is consistent by
+      // construction. The staged number is preserved in stagedEV.
+      const fireTakeout = race.takeout > 0 ? race.takeout : 0.16;
+      const fireEv = calibratedEv != null
+        ? calibratedEv
+        : liveTrueP != null
+          ? evPercentFromTrueP(liveTrueP, liveOdds, fireTakeout)
+          : liveEv;
 
       if (isExoticInRace) {
         // Preserve the stake and estimatedPayout that were locked in at stage
@@ -318,6 +337,7 @@ class Engine {
           capturedOdds: liveOdds,
           // capturedEV stays at the strategy's match-time exotic-pool EV;
           // there's no honest "live EV" for an exacta from per-runner data.
+          stagedEV: t.capturedEV,
           placedAt: now,
           shadow: isShadow || undefined,
         });
@@ -394,16 +414,17 @@ class Engine {
         continue;
       }
 
-      // Validate that capturedTrueP and liveEv are mathematically consistent.
-      // If they diverge significantly, prefer recalculating from the strategy's
-      // calibrated values to avoid storing mismatched pairs.
-      const isConsistent = validateEVConsistency(liveTrueP, liveEv, liveOdds, race.takeout > 0 ? race.takeout : 0.16);
+      // Validate that the values we're about to persist are mathematically
+      // consistent. fireEv is recomputed from (liveTrueP, liveOdds) above, so
+      // a failure here means something genuinely weird, not the known
+      // staged-EV-at-stale-odds fallback.
+      const isConsistent = validateEVConsistency(liveTrueP, fireEv, liveOdds, fireTakeout);
       if (!isConsistent && liveTrueP != null && liveOdds) {
-        const recomputedEV = evPercentFromTrueP(liveTrueP, liveOdds, race.takeout > 0 ? race.takeout : 0.16);
+        const recomputedEV = evPercentFromTrueP(liveTrueP, liveOdds, fireTakeout);
         this.note(
           `[${t.strategyId ?? "?"}] ⚠ EV consistency check failed on ${t.raceId} #${selection}: ` +
           `trueP ${(liveTrueP * 100).toFixed(1)}% @ ${liveOdds.toFixed(2)} odds → ` +
-          `expected ${recomputedEV.toFixed(1)}% EV, got ${liveEv?.toFixed(1) ?? "null"}%`,
+          `expected ${recomputedEV.toFixed(1)}% EV, got ${fireEv?.toFixed(1) ?? "null"}%`,
         );
       }
 
@@ -411,7 +432,8 @@ class Engine {
         status: "open",
         stake: liveStake,
         capturedOdds: liveOdds,
-        capturedEV: liveEv,
+        capturedEV: fireEv,
+        stagedEV: t.capturedEV,
         capturedEVRaw: liveEvRaw,
         capturedTrueP: liveTrueP,
         potentialPayout: liveStake * liveOdds,
@@ -422,8 +444,9 @@ class Engine {
       promoted++;
       this.note(
         `[${t.strategyId ?? "?"}] ${isShadow ? "SHADOW " : ""}FIRE ${t.raceId} #${selection} ` +
-        `@ ${runner.fractionalOdds} live EV ${liveEv >= 0 ? "+" : ""}${liveEv.toFixed(1)}% ` +
-        `(${decision.status === "LOCKED" ? "T-15s lock" : "EV peaked"})`,
+        `@ ${runner.fractionalOdds} fire EV ${fireEv >= 0 ? "+" : ""}${fireEv.toFixed(1)}%` +
+        (Math.abs(fireEv - t.capturedEV) > 1 ? ` (staged ${t.capturedEV >= 0 ? "+" : ""}${t.capturedEV.toFixed(1)}%)` : "") +
+        ` (${decision.status === "LOCKED" ? "T-15s lock" : "EV peaked"})`,
       );
     }
     return { promoted, aborted };
