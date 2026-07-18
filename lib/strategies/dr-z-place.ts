@@ -269,7 +269,11 @@ export const drZPlaceStrategy: Strategy = {
       selection: best.runner.program,
       type: "PLACE",
       evPercent: ev,
-      reason: `Dr. Z PLACE ${best.runner.name} @ ${best.runner.fractionalOdds} — place pool underprices vs win pool (+${ev.toFixed(1)}%)`,
+      // fractionalOdds here is the WIN price — it's the strategy's signal (a
+      // well-backed win favorite the crowd under-bets to place), NOT what this
+      // PLACE bet pays. Label it as the win-pool price so the ticket doesn't
+      // read as "place @ 1/1" (place never pays the win odds).
+      reason: `Dr. Z PLACE ${best.runner.name} — ${best.runner.fractionalOdds} win favorite the place pool underprices (+${ev.toFixed(1)}%)`,
       confidence: Math.min(0.7, 0.4 + ev / 50),
     };
   },

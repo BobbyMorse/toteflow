@@ -1065,6 +1065,21 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
   // The gap between them is CLV; we surface both so the user can audit the gap directly.
   const bookedOdds = t.capturedOdds > 0 ? decimalToFractional(t.capturedOdds) : "—";
   const finalOdds = t.closingOdds && t.closingOdds > 0 ? decimalToFractional(t.closingOdds) : null;
+  // PLACE/SHOW don't pay the WIN odds — capturedOdds/closingOdds are the
+  // horse's win price and don't belong in this column for those bets. When a
+  // place/show bet cashes we know the EXACT price the pool paid:
+  // payout/stake = realizedPL/stake + 1. Losers never cashed (no place price);
+  // open bets have no tote place quote yet.
+  const isPlaceShow = t.type === "PLACE" || t.type === "SHOW";
+  const placeVerb = t.type === "SHOW" ? "show" : "place";
+  const placePrice = isPlaceShow && t.status === "won" && t.stake > 0 && t.realizedPL != null
+    ? t.realizedPL / t.stake + 1
+    : null;
+  const placeOddsTitle = placePrice != null
+    ? `${betTypeLabel(t.type)} price paid — $${((t.realizedPL ?? 0) + t.stake).toFixed(2)} back on $${t.stake.toFixed(0)} from the ${placeVerb} pool`
+    : t.status === "lost"
+      ? `Did not ${placeVerb} — no payout`
+      : `No tote ${placeVerb} price until settled (win odds don't apply to a ${placeVerb} bet)`;
   // Finish order from the grader (top-4). For single-runner bets we can also
   // call out where our pick actually landed.
   const finishOrder = t.winners ?? [];
@@ -1128,14 +1143,22 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
             <div className="stat-label">stake</div>
             <div className="text-ink-0">${t.stake.toFixed(0)}</div>
           </div>
-          <div>
-            <div className="stat-label">odds</div>
+          <div title={isPlaceShow ? placeOddsTitle : undefined}>
+            <div className="stat-label">{isPlaceShow ? `${placeVerb} price` : "odds"}</div>
             <div className="text-ink-1 leading-tight">
-              {bookedOdds}
-              {finalOdds && (
+              {isPlaceShow ? (
+                placePrice != null
+                  ? <span className="text-ink-0">{decimalToFractional(placePrice)}</span>
+                  : <span className="text-ink-2">—</span>
+              ) : (
                 <>
-                  <span className="text-ink-2 mx-1">→</span>
-                  <span className="text-ink-0">{finalOdds}</span>
+                  {bookedOdds}
+                  {finalOdds && (
+                    <>
+                      <span className="text-ink-2 mx-1">→</span>
+                      <span className="text-ink-0">{finalOdds}</span>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -1217,12 +1240,21 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
           {t.horseName && <span className="text-ink-1 ml-2">{t.horseName}</span>}
         </span>
         <span className="font-mono tabular-nums text-right">${t.stake.toFixed(0)}</span>
-        <span className="font-mono tabular-nums text-right text-xs" title="Odds we booked at → final tote odds">
-          <span className="text-ink-1">{bookedOdds}</span>
-          {finalOdds && (
+        <span className="font-mono tabular-nums text-right text-xs"
+          title={isPlaceShow ? placeOddsTitle : "Odds we booked at → final tote odds"}>
+          {isPlaceShow ? (
+            placePrice != null
+              ? <span className="text-ink-0">{decimalToFractional(placePrice)}</span>
+              : <span className="text-ink-2">—</span>
+          ) : (
             <>
-              <span className="text-ink-2 mx-1">→</span>
-              <span className="text-ink-0">{finalOdds}</span>
+              <span className="text-ink-1">{bookedOdds}</span>
+              {finalOdds && (
+                <>
+                  <span className="text-ink-2 mx-1">→</span>
+                  <span className="text-ink-0">{finalOdds}</span>
+                </>
+              )}
             </>
           )}
         </span>
