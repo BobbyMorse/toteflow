@@ -37,6 +37,25 @@ export interface StrategyAnalytics {
   // WIN/PLACE/SHOW always settle at real tote prices and are never counted.
   estPayoutWins: number;             // exotic wins paid at estimated payouts
   estPayoutPL: number;               // realizedPL carried by those wins
+  // Strategy-attribution view: performance including races this strategy was
+  // shadowed on (another strategy fired the real bet first on the same pick).
+  // Credits shadowPL at the strategy's would-be stake. NEVER summed into the
+  // bankroll — this is for evaluating the strategy in isolation, not tracking
+  // money spent. `shadowWon`/`shadowPL` isolate the slice the bankroll-true
+  // realizedPL is missing, so the UI can explain the delta.
+  attribution: {
+    bets: number;
+    settled: number;
+    won: number;
+    realizedPL: number;               // real-when-fired + shadow-when-shadowed
+    roi: number | null;               // over attribution settled stake
+    hitRate: number | null;
+    roiCI95Low: number | null;
+    roiCI95High: number | null;
+    shadowWon: number;                // wins that were shadowed (invisible in bankroll view)
+    shadowSettled: number;
+    shadowPL: number;                 // hypothetical P&L from the shadowed slice
+  };
   // Out-of-sample split for strategies whose calibration was fitted on past
   // bets (tvg-baseline family). In-sample ROI is curve-fit by construction;
   // only bets placed AFTER the weight was frozen test the model honestly.
@@ -166,6 +185,54 @@ const Q_STRATEGY = db.prepare(`
   GROUP BY strategyId
 `);
 
+// Strategy-ATTRIBUTION aggregates — the "how does this strategy actually
+// perform" view, distinct from the bankroll-true numbers in Q_STRATEGY.
+//
+// Q_STRATEGY filters shadow = 0 because a shadow ticket didn't spend real
+// money: when tvg-steam fired first on a pick, tvg-baseline's identical pick
+// was booked as a $0 shadow so the bankroll isn't double-debited. Correct for
+// bankroll — but it means every race a strategy got beaten to is silently
+// dropped from ITS win/loss record, understating (or hiding) its true edge.
+//
+// This query includes shadow rows and credits them at the stake the strategy
+// WOULD have bet: shadowStake / shadowPL instead of stake / realizedPL. The
+// two views must never be summed into the bankroll — this is per-strategy
+// evaluation only. Shadow rows settled before 2026-07-17 have neither field
+// (COALESCE → 0), so they contribute nothing and are honestly omitted rather
+// than counted as $0 wins.
+const ATTR_STAKE = `(CASE WHEN shadow = 1 THEN COALESCE(shadowStake, 0) ELSE stake END)`;
+const ATTR_PL = `(CASE WHEN shadow = 1 THEN COALESCE(shadowPL, 0) ELSE realizedPL END)`;
+const Q_STRATEGY_ATTR = db.prepare(`
+  SELECT
+    strategyId,
+    SUM(CASE WHEN status IN ('open','won','lost') THEN 1 ELSE 0 END)  AS attribBets,
+    SUM(CASE WHEN status IN ('won','lost')        THEN 1 ELSE 0 END)  AS attribSettled,
+    SUM(CASE WHEN status = 'won'                  THEN 1 ELSE 0 END)  AS attribWon,
+    SUM(CASE WHEN status IN ('won','lost') THEN ${ATTR_PL}    ELSE 0 END) AS attribPL,
+    SUM(CASE WHEN status IN ('won','lost') THEN ${ATTR_STAKE} ELSE 0 END) AS attribSettledStaked,
+    AVG(CASE
+      WHEN status IN ('won','lost') AND ${ATTR_STAKE} > 0
+      THEN ${ATTR_PL} / ${ATTR_STAKE}
+    END)                                                             AS attribAvgRoi,
+    SUM(CASE
+      WHEN status IN ('won','lost') AND ${ATTR_STAKE} > 0
+      THEN (${ATTR_PL} / ${ATTR_STAKE}) * (${ATTR_PL} / ${ATTR_STAKE})
+      ELSE 0
+    END)                                                             AS attribSumRoiSq,
+    -- Shadow-only slice: how much of the above is picks this strategy was
+    -- beaten to (i.e. invisible in the bankroll-true view). Lets the UI show
+    -- "+N shadowed wins" so the delta between the two views is explained.
+    SUM(CASE WHEN shadow = 1 AND status IN ('won','lost') THEN 1 ELSE 0 END)              AS shadowSettled,
+    SUM(CASE WHEN shadow = 1 AND status = 'won' THEN 1 ELSE 0 END)                        AS shadowWon,
+    SUM(CASE WHEN shadow = 1 AND status IN ('won','lost') THEN COALESCE(shadowPL,0) ELSE 0 END) AS shadowPLTotal
+  FROM tickets
+  -- Exclude pre-2026-07-17 shadows (shadowPL never recorded): they're genuinely
+  -- unmeasurable, so drop them rather than count them as $0-stake phantom bets —
+  -- which would both inflate settled count and desync the CI's N from the sums.
+  WHERE strategyId IS NOT NULL AND (shadow = 0 OR shadowPL IS NOT NULL)
+  GROUP BY strategyId
+`);
+
 // Out-of-sample aggregates for one calibrated strategy: bets placed at/after
 // the freeze timestamp only.
 const Q_OOS = db.prepare(`
@@ -214,8 +281,35 @@ function oosFor(strategyId: string): StrategyAnalytics["oos"] {
   };
 }
 
+function attributionFor(row: any): StrategyAnalytics["attribution"] {
+  const settled = row?.attribSettled || 0;
+  const avgRoi = row?.attribAvgRoi ?? null;
+  const variance = settled > 1 && avgRoi != null
+    ? Math.max(0, (row.attribSumRoiSq || 0) / settled - avgRoi * avgRoi)
+    : null;
+  const stdErr = variance != null && settled > 0 ? Math.sqrt(variance / settled) : null;
+  const ci95 = stdErr != null ? 1.96 * stdErr : null;
+  const staked = row?.attribSettledStaked || 0;
+  return {
+    bets: row?.attribBets || 0,
+    settled,
+    won: row?.attribWon || 0,
+    realizedPL: row?.attribPL || 0,
+    roi: staked > 0 ? (row?.attribPL || 0) / staked : null,
+    hitRate: settled > 0 ? (row?.attribWon || 0) / settled : null,
+    roiCI95Low: avgRoi != null && ci95 != null ? avgRoi - ci95 : null,
+    roiCI95High: avgRoi != null && ci95 != null ? avgRoi + ci95 : null,
+    shadowWon: row?.shadowWon || 0,
+    shadowSettled: row?.shadowSettled || 0,
+    shadowPL: row?.shadowPLTotal || 0,
+  };
+}
+
 export function strategyAnalytics(): StrategyAnalytics[] {
   const rows = Q_STRATEGY.all() as any[];
+  const attrByStrategy = new Map<string, any>(
+    (Q_STRATEGY_ATTR.all() as any[]).map(a => [a.strategyId, a]),
+  );
   return rows.map(r => {
     const settled = r.settled || 0;
     const avgRoi = r.avgRoi;
@@ -259,6 +353,7 @@ export function strategyAnalytics(): StrategyAnalytics[] {
       calibrationRatio: r.predictedPL ? (r.realizedPL || 0) / r.predictedPL : null,
       estPayoutWins: r.estPayoutWins || 0,
       estPayoutPL: r.estPayoutPL || 0,
+      attribution: attributionFor(attrByStrategy.get(r.strategyId)),
       oos: oosFor(r.strategyId),
     };
   });

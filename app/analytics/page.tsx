@@ -27,6 +27,19 @@ interface StrategyAnalytics {
   calibrationRatio: number | null;
   estPayoutWins: number;
   estPayoutPL: number;
+  attribution: {
+    bets: number;
+    settled: number;
+    won: number;
+    realizedPL: number;
+    roi: number | null;
+    hitRate: number | null;
+    roiCI95Low: number | null;
+    roiCI95High: number | null;
+    shadowWon: number;
+    shadowSettled: number;
+    shadowPL: number;
+  };
   oos: {
     since: number;
     bets: number;
@@ -465,6 +478,37 @@ function StrategyCard({ s, kind }: { s: StrategyAnalytics; kind: "working" | "lo
                 )}
               </>
             )}
+          </div>
+        )}
+        {/* Strategy-attribution view: performance INCLUDING races this strategy
+            was shadowed on (another strategy fired the real bet first on the
+            same pick, so this one booked a $0 shadow). The bankroll-true ROI/PL
+            on the right drops those entirely — which zeroes real wins and
+            distorts the strategy's record. This line credits them at the stake
+            it would have bet. Only shown when there's a shadowed slice to
+            explain. Never part of the bankroll. */}
+        {s.attribution.shadowSettled > 0 && (
+          <div className="text-[10px] sm:text-[11px] mt-0.5 text-ink-2"
+            title="Includes picks this strategy was beaten to (booked as $0 shadows to avoid double-debiting the bankroll). Credited at the stake the strategy would have bet. This is for evaluating the strategy in isolation — it is NOT money spent and is not part of the bankroll.">
+            <span className="font-semibold text-accent-cyan">incl. shadowed</span>:{" "}
+            <span className={clsx("font-mono font-semibold",
+              (s.attribution.roi ?? 0) >= 0 ? "text-accent-overlay" : "text-accent-steam")}>
+              {s.attribution.roi == null ? "—" : `${s.attribution.roi >= 0 ? "+" : ""}${(s.attribution.roi * 100).toFixed(1)}%`}
+            </span>{" "}
+            <span className={clsx("font-mono",
+              s.attribution.realizedPL >= 0 ? "text-accent-overlay" : "text-accent-steam")}>
+              ({s.attribution.realizedPL >= 0 ? "+" : ""}${s.attribution.realizedPL.toFixed(0)})
+            </span>{" "}
+            over {s.attribution.settled} settled
+            {s.attribution.roiCI95Low != null && s.attribution.roiCI95High != null && (
+              <span className="font-mono"> [{(s.attribution.roiCI95Low * 100).toFixed(0)}, {(s.attribution.roiCI95High * 100).toFixed(0)}]</span>
+            )}
+            <span className="text-ink-2">
+              {" · "}+{s.attribution.shadowWon}/{s.attribution.shadowSettled} shadowed{" "}
+              (<span className={s.attribution.shadowPL >= 0 ? "text-accent-overlay" : "text-accent-steam"}>
+                {s.attribution.shadowPL >= 0 ? "+" : ""}${s.attribution.shadowPL.toFixed(0)}
+              </span>) hidden from bankroll
+            </span>
           </div>
         )}
       </div>
