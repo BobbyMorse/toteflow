@@ -17,6 +17,19 @@ export interface StratStats {
   capturedEV: number;
   avgClv: number | null;
   avgClosingEV: number | null;
+  // Measure-only strategies book every bet as a $0 shadow — real stats above are
+  // all zero; the actual record is in `shadow` (hypothetical, never bankroll).
+  measureOnly?: boolean;
+  shadow?: {
+    total: number;
+    settled: number;
+    won: number;
+    hitRate: number | null;
+    realizedPL: number;
+    roi: number | null;
+    avgClv: number | null;
+    avgClosingEV: number | null;
+  };
 }
 
 export interface AutobookState {

@@ -88,15 +88,28 @@ export default function ConfigPage() {
   );
 }
 
+// Effective ROI/volume for sort + visibility: measure-only strategies carry
+// their record in the shadow slice (real stats are zero by design), so read
+// from there for them.
+function effRoi(s: StratStats): number | null {
+  return s.measureOnly ? (s.shadow?.roi ?? null) : s.roi;
+}
+function effTotal(s: StratStats): number {
+  return s.measureOnly ? (s.shadow?.total ?? 0) : s.total;
+}
+
 function sortStrategies(strategies: StratStats[], showDisabled: boolean): StratStats[] {
   const filtered = showDisabled
     ? strategies
-    : strategies.filter(s => s.config.enabled || s.total > 0);
+    // Keep a strategy when it's enabled OR has a track record. Measure-only
+    // strategies always have total 0 (every bet is a $0 shadow), so check their
+    // shadow volume too — otherwise disabling one makes it vanish entirely.
+    : strategies.filter(s => s.config.enabled || effTotal(s) > 0);
   return [...filtered].sort((a, b) => {
-    const ar = a.roi == null ? -Infinity : a.roi;
-    const br = b.roi == null ? -Infinity : b.roi;
+    const ar = effRoi(a) ?? -Infinity;
+    const br = effRoi(b) ?? -Infinity;
     if (ar !== br) return br - ar;
-    return b.total - a.total;
+    return effTotal(b) - effTotal(a);
   });
 }
 
@@ -141,13 +154,21 @@ function PLContribution({ strategies }: { strategies: StratStats[] }) {
 }
 
 function StrategyRow({ s, onPatch }: { s: StratStats; onPatch: (p: Partial<StratStats["config"]>) => void }) {
-  const pl = s.realizedPL;
-  const clv = s.avgClv;
+  // Measure-only strategies book every bet as a $0 shadow, so their bankroll
+  // stats are all zero — show the shadow slice (hypothetical) instead so the row
+  // reflects the real record. Marked with ~ / a tooltip; never a bankroll figure.
+  const m = s.measureOnly && s.shadow ? s.shadow : null;
+  const total = m ? m.total : s.total;
+  const hitRate = m ? m.hitRate : s.hitRate;
+  const roi = m ? m.roi : s.roi;
+  const pl = m ? m.realizedPL : s.realizedPL;
+  const clv = m ? m.avgClv : s.avgClv;
+  const closeEV = m ? m.avgClosingEV : s.avgClosingEV;
   const rowTint =
-    s.total === 0 ? "" :
-    s.roi == null ? "" :
-    s.roi > 0.05 ? "bg-accent-overlay/[0.06]" :
-    s.roi < -0.05 ? "bg-accent-steam/[0.06]" : "";
+    total === 0 ? "" :
+    roi == null ? "" :
+    roi > 0.05 ? "bg-accent-overlay/[0.06]" :
+    roi < -0.05 ? "bg-accent-steam/[0.06]" : "";
   return (
     <tr className={clsx("text-sm", !s.config.enabled && "opacity-50", rowTint)}>
       <td className="px-3 py-2">
@@ -156,7 +177,15 @@ function StrategyRow({ s, onPatch }: { s: StratStats; onPatch: (p: Partial<Strat
           className="w-4 h-4 accent-accent-cyan" />
       </td>
       <td className="px-3 py-2">
-        <div className="text-ink-0 font-medium">{s.name}</div>
+        <div className="text-ink-0 font-medium flex items-center gap-2">
+          {s.name}
+          {m && (
+            <span className="chip border border-line/60 bg-bg-1 text-ink-2 text-[10px] normal-case tracking-normal"
+              title="Measure-only: books every bet as a $0 shadow — never touches the bankroll. Stats shown are the hypothetical record at its shadow stake.">
+              measure-only
+            </span>
+          )}
+        </div>
         <div className="text-[11px] text-ink-2 max-w-md leading-tight">{s.thesis}</div>
       </td>
       <td className="px-3 py-2 text-right">
@@ -180,26 +209,27 @@ function StrategyRow({ s, onPatch }: { s: StratStats; onPatch: (p: Partial<Strat
           <option value="chaos">chaos</option>
         </select>
       </td>
-      <td className="px-3 py-2 text-right font-mono tabular-nums">{s.total}</td>
+      <td className="px-3 py-2 text-right font-mono tabular-nums">{total}</td>
       <td className="px-3 py-2 text-right font-mono tabular-nums">
-        {s.hitRate == null ? <span className="text-ink-2">—</span> : `${(s.hitRate * 100).toFixed(0)}%`}
+        {hitRate == null ? <span className="text-ink-2">—</span> : `${(hitRate * 100).toFixed(0)}%`}
       </td>
       <td className={clsx("px-3 py-2 text-right font-mono tabular-nums",
         clv == null ? "text-ink-2" : clv >= 0 ? "text-accent-overlay" : "text-accent-steam")}>
         {clv == null ? "—" : `${clv >= 0 ? "+" : ""}${clv.toFixed(1)}%`}
       </td>
       <td className={clsx("px-3 py-2 text-right font-mono tabular-nums",
-        s.avgClosingEV == null ? "text-ink-2" : s.avgClosingEV >= 0 ? "text-accent-overlay" : "text-accent-steam")}
+        closeEV == null ? "text-ink-2" : closeEV >= 0 ? "text-accent-overlay" : "text-accent-steam")}
         title="Mean model EV at race-off across settled bets — the truthful grading metric">
-        {s.avgClosingEV == null ? "—" : `${s.avgClosingEV >= 0 ? "+" : ""}${s.avgClosingEV.toFixed(1)}%`}
+        {closeEV == null ? "—" : `${closeEV >= 0 ? "+" : ""}${closeEV.toFixed(1)}%`}
       </td>
       <td className={clsx("px-3 py-2 text-right font-mono tabular-nums",
-        s.roi == null ? "text-ink-2" : s.roi >= 0 ? "text-accent-overlay" : "text-accent-steam")}>
-        {s.roi == null ? "—" : `${s.roi >= 0 ? "+" : ""}${(s.roi * 100).toFixed(1)}%`}
+        roi == null ? "text-ink-2" : roi >= 0 ? "text-accent-overlay" : "text-accent-steam")}>
+        {roi == null ? "—" : `${roi >= 0 ? "+" : ""}${(roi * 100).toFixed(1)}%`}
       </td>
       <td className={clsx("px-3 py-2 text-right font-mono tabular-nums",
-        pl >= 0 ? "text-accent-overlay" : "text-accent-steam")}>
-        {pl >= 0 ? "+" : ""}${pl.toFixed(2)}
+        pl >= 0 ? "text-accent-overlay" : "text-accent-steam")}
+        title={m ? "Hypothetical P/L at the shadow stake — measure-only, never part of the bankroll" : undefined}>
+        {m ? "~" : ""}{pl >= 0 ? "+" : ""}${pl.toFixed(2)}
       </td>
     </tr>
   );
