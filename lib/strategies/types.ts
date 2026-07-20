@@ -112,17 +112,9 @@ export interface Strategy {
   // alongside the real book — accumulating a fully-graded track record — without
   // touching the canonical bankroll or the ~hundreds-of-real-bets-a-day volume.
   // Promoting an experiment to real money is a deliberate code change (flip this
-  // off), not a UI toggle.
+  // off), not a UI toggle. Booking path honors this in both the stage→promote
+  // flow and the direct scanners (e.g. Engine.scanSteam).
   measureOnly?: boolean;
-  // The strategy makes NO expected-value claim — its entry thesis is something
-  // other than model EV (e.g. pure market steam). Two effects at promote time:
-  // (1) the EV_FIRE_FLOOR (don't fire WIN bets at negative EV) is skipped, since
-  // a "no EV" pick has no meaningful fire-time EV to floor; (2) capturedEV/
-  // capturedTrueP are stored as neutral (0 / undefined) rather than a misleading
-  // model number. Also freezes the crush baseline (see considerStrategy): a
-  // no-EV strategy always matches, so without the freeze the refresh loop would
-  // reset capturedOdds every tick and a fireCrushBand could never trigger.
-  noEvThesis?: boolean;
 }
 
 export interface StrategyConfig {

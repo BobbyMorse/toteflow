@@ -1,64 +1,111 @@
+import type { Race, Runner } from "../types";
 import type { Strategy } from "./types";
 
-// Pure-steam CONTROL (measure-only, no model). The whole point is to isolate
-// what tvg-steam's MODEL actually contributes. tvg-steam = model-divergent pick
-// + 15-35% crush confirmation. This strategy keeps the identical crush gate but
-// throws the model away: it stages the plain market FAVORITE and fires only if
-// the crowd hammers that favorite a further 15-35% by post.
+// Pure-steam SCANNER (measure-only, no model). A field-wide steam detector:
+// every tick in the closing window it measures the % of LATE odds movement on
+// EVERY live runner and books a measure-only paper bet on any horse whose price
+// has crushed past the trigger. No model, no favorite bias — it bets whatever
+// the money is confirming.
 //
-// The experiment it settles:
-//   - pure-steam shadow ROI ≈ tvg-steam ROI  → the model adds nothing; the edge
-//     (if any) is pure "follow the confirmed money", and all the calibration
-//     machinery can go.
-//   - pure-steam clearly worse                → the model's SELECTION is doing
-//     real work beyond the steam signal, and it's worth keeping.
+// The experiment it settles: does late market steam, by itself, predict winners
+// and at what magnitude does the payoff survive? Compare its shadow ROI against
+// tvg-steam (model pick + crush gate):
+//   - pure-steam ≈ tvg-steam  → the model adds nothing; the edge is the steam.
+//   - pure-steam worse        → the model's SELECTION is doing real work.
+// And because it records the exact crush % on each ticket (stagedEV), analysis
+// can bucket by magnitude and re-derive the payoff sweet spot out-of-sample —
+// the 2026-07-17 audit put it at 15-35%; this measures whether that holds going
+// forward and where it breaks.
 //
-// Runs measure-only (zero real stake, fully-graded shadowPL) so it costs nothing
-// to run alongside the live book and never adds to real-money volume.
+// Measure-only: every fire is shadow (real stake/PL = 0, hypothetical in
+// shadowPL) so it never touches the bankroll or adds to real-bet volume.
 //
-// PRE-REGISTERED 2026-07-19: the band [15,35], the universe (thoroughbred,
-// field >= 5, favorite = shortest live price), and the measure-only stake basis
-// were all fixed BEFORE any forward data was collected. Do not tune these to
-// results — the point of a separate id is to measure the pre-registered rule
-// out-of-sample. If it looks good, it has to look good on data gathered AFTER
-// today, not on a re-slice of the cohort that inspired it.
+// Booking lives in the autobook scanner (Engine.scanSteam), not evaluate() —
+// evaluate returns null so the normal one-pick-per-race stage loop ignores it.
+// A single race can surface multiple steamers, and each gets its own bet.
 
-const MIN_SECONDS_TO_POST = 15;
-const STEAM_BAND: readonly [number, number] = [15, 35];
-const MIN_FIELD = 5;
-const MAX_ODDS = 60; // ignore bombs / stale prices, same guard as tvg-baseline
+export const PURE_STEAM_ID = "pure-steam";
 
+// Late window: measure the crush from the odds as they stood when the race
+// entered this window (T-WINDOW_MS) to now. Only scan/book inside it.
+export const WINDOW_MS = 6 * 60_000;
+// Don't book inside T-15s — a human couldn't place it. Matches tvg-baseline.
+export const MIN_SECONDS_TO_POST = 15;
+// Trigger floor: a horse must have shortened at least this much, late, to fire.
+// No upper cap — we bet big crushes too and record the magnitude so analysis
+// can confirm/deny the 35% "payout destroyed" ceiling forward, not gate on it.
+export const TRIGGER_MIN_CRUSH_PCT = 15;
+// Movement must span at least this much wall-clock so a single blip tick can't
+// masquerade as steam.
+export const MIN_MOVE_BASE_MS = 60_000;
+export const MIN_FIELD = 5;
+export const MAX_ODDS = 60; // ignore bombs / stale prices (same guard as baseline)
+
+export interface SteamTrigger {
+  program: string;
+  name: string;
+  odds: number;         // current (fire-moment) decimal odds
+  refOdds: number;      // odds at the start of the late window
+  fractionalOdds: string;
+  crushPct: number;     // late movement %, (refOdds - odds) / refOdds * 100
+}
+
+// Odds at the start of the late window for a runner: the last history point at
+// or before window-open, else the earliest point we have. Returns null when
+// there isn't enough history (need ≥2 points spanning ≥ MIN_MOVE_BASE_MS).
+function windowOpenOdds(runner: Runner, windowOpenT: number, now: number): { odds: number; t: number } | null {
+  const hist = runner.oddsHistory;
+  if (!hist || hist.length < 2) return null;
+  let ref = hist[0];
+  for (const h of hist) {
+    if (h.t <= windowOpenT) ref = h;
+    else break;
+  }
+  if (now - ref.t < MIN_MOVE_BASE_MS) return null;
+  return { odds: ref.odds, t: ref.t };
+}
+
+// Pure detection — every live runner whose late crush clears the trigger.
+// `now` is passed in (no Date.now() so it's deterministic/testable).
+export function detectSteamTriggers(race: Race, now: number): SteamTrigger[] {
+  const msToPost = race.postTime - now;
+  if (msToPost < MIN_SECONDS_TO_POST * 1000) return []; // too late to place
+  if (msToPost > WINDOW_MS) return [];                  // not in the late window yet
+  if (race.statusCode === "SK") return [];              // race is off
+
+  const live = race.runners.filter(r => !r.scratched && r.currentOdds > 1 && r.currentOdds < MAX_ODDS);
+  if (live.length < MIN_FIELD) return [];
+
+  const windowOpenT = race.postTime - WINDOW_MS;
+  const out: SteamTrigger[] = [];
+  for (const r of live) {
+    const ref = windowOpenOdds(r, windowOpenT, now);
+    if (!ref) continue;
+    const crushPct = ((ref.odds - r.currentOdds) / ref.odds) * 100;
+    if (crushPct < TRIGGER_MIN_CRUSH_PCT) continue;
+    out.push({
+      program: r.program,
+      name: r.name,
+      odds: r.currentOdds,
+      refOdds: ref.odds,
+      fractionalOdds: r.fractionalOdds,
+      crushPct,
+    });
+  }
+  return out;
+}
+
+// Registered so it has a config row and shows in the UI, but the real work is
+// the autobook scanner. evaluate() returns null on purpose — pure-steam does
+// not stage one pick per race; it books each steamer directly.
 export const pureSteamStrategy: Strategy = {
-  id: "pure-steam",
-  name: "Pure Steam (control · no model)",
+  id: PURE_STEAM_ID,
+  name: "Pure Steam (scanner · no model)",
   thesis:
-    "Back the market favorite and fire only once late money crushes it a further 15-35%. No model — isolates whether steam confirmation alone carries the edge.",
+    "Scan the whole field for late odds crush and paper-bet every horse that shortens ≥15% into post. No model — measures whether steam confirmation alone predicts winners.",
   appliesTo: ["thoroughbred"],
   measureOnly: true,
-  noEvThesis: true,
-  fireCrushBand: STEAM_BAND,
-  evaluate(race) {
-    const secondsToPost = (race.postTime - Date.now()) / 1000;
-    if (secondsToPost < MIN_SECONDS_TO_POST) return null;
-    const live = race.runners.filter(
-      r => !r.scratched && r.currentOdds > 1 && r.currentOdds < MAX_ODDS,
-    );
-    if (live.length < MIN_FIELD) return null;
-
-    // Market favorite = shortest live price. This is the crowd's pick, not the
-    // model's; the fireCrushBand gate at promote decides whether the late money
-    // confirms it enough to actually fire.
-    let fav = live[0];
-    for (const r of live) if (r.currentOdds < fav.currentOdds) fav = r;
-
-    return {
-      selection: fav.program,
-      type: "WIN",
-      evPercent: 0, // no EV claim — pure market control (see noEvThesis)
-      confidence: 0.5,
-      reason:
-        `Pure-steam control: favorite ${fav.name} @ ${fav.fractionalOdds} — ` +
-        `fire only if crushed ${STEAM_BAND[0]}-${STEAM_BAND[1]}% by post (no model)`,
-    };
+  evaluate() {
+    return null;
   },
 };

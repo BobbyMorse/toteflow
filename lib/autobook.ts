@@ -26,6 +26,7 @@ import { minBaseForWager } from "./wager-minimums";
 import { strategyCalibratedTrueP, validateEVConsistency, evPercentFromTrueP } from "./strategy-calibration";
 import { strategyAppliesToTrack } from "./track-types";
 import { persistClosingSnapshot } from "./runner-snapshots";
+import { PURE_STEAM_ID, detectSteamTriggers } from "./strategies/pure-steam";
 
 function phaseOf(race: Race, now: number): Race["phase"] {
   const ms = race.postTime - now;
@@ -196,6 +197,11 @@ class Engine {
       }
     }
 
+    // Field-wide steam scanner (pure-steam, measure-only). Books a shadow paper
+    // bet on every horse showing a qualifying late crush — its own path because
+    // it fires multiple bets per race and doesn't stage a single pick.
+    this.scanSteam(races, now);
+
     // Index live races by id once, then walk every staged ticket and decide
     // whether to promote, abort, or keep holding. This is the core of the
     // human-mirroring lifecycle.
@@ -282,7 +288,6 @@ class Engine {
       // Measure-only strategies (live experiments) never commit real stake:
       // force the ticket to shadow so real P&L stays 0 and only shadowPL
       // accrues — same mechanism as bankroll-dedup shadowing, different cause.
-      const noEv = !!originStrategy?.noEvThesis;
       const forceShadow = isShadow || !!originStrategy?.measureOnly;
 
       // Steam-confirm gate (opt-in via Strategy.fireCrushBand): fire only
@@ -453,7 +458,7 @@ class Engine {
       // priced in once: the 0.30 calibration weight was fitted against realized
       // closing-price payoffs. Keep lib/odds-drift.ts for analysis, not gating.
       const EV_FIRE_FLOOR = 0;
-      if (!noEv && liveEv < EV_FIRE_FLOOR) {
+      if (liveEv < EV_FIRE_FLOOR) {
         Tickets.update(t.id, {
           status: "aborted",
           abortedAt: now,
@@ -469,7 +474,7 @@ class Engine {
       // a failure here means something genuinely weird, not the known
       // staged-EV-at-stale-odds fallback.
       const isConsistent = validateEVConsistency(liveTrueP, fireEv, liveOdds, fireTakeout);
-      if (!noEv && !isConsistent && liveTrueP != null && liveOdds) {
+      if (!isConsistent && liveTrueP != null && liveOdds) {
         const recomputedEV = evPercentFromTrueP(liveTrueP, liveOdds, fireTakeout);
         this.note(
           `[${t.strategyId ?? "?"}] ⚠ EV consistency check failed on ${t.raceId} #${selection}: ` +
@@ -483,12 +488,10 @@ class Engine {
         stake: liveStake,
         shadowStake: forceShadow ? baseStake : undefined,
         capturedOdds: liveOdds,
-        // No-EV strategies (steam controls) make no model claim — store neutral
-        // EV/trueP rather than a misleading number derived from the adapter blend.
-        capturedEV: noEv ? 0 : fireEv,
+        capturedEV: fireEv,
         stagedEV: t.capturedEV,
         capturedEVRaw: liveEvRaw,
-        capturedTrueP: noEv ? undefined : liveTrueP,
+        capturedTrueP: liveTrueP,
         potentialPayout: liveStake * liveOdds,
         placedAt: now,
         shadow: forceShadow || undefined,
@@ -755,6 +758,72 @@ class Engine {
     );
   }
 
+  // Field-wide steam scanner for the measure-only pure-steam experiment. For
+  // every race in the late window, books a shadow paper WIN bet on each runner
+  // whose odds have crushed past the trigger (see lib/strategies/pure-steam.ts).
+  // Direct-book (not stage→promote) because one race can surface several
+  // steamers and each gets its own bet; measure-only so real stake/P&L stay 0
+  // and only shadowPL accrues. The exact late-crush % is stored in stagedEV so
+  // analysis can bucket by magnitude and find where sharp money stops paying.
+  private scanSteam(races: Race[], now: number) {
+    if (!AutoBook.globalEnabled()) return;
+    const strat = strategies.find(s => s.id === PURE_STEAM_ID);
+    const cfg = AutoBook.strategyConfig(PURE_STEAM_ID);
+    if (!strat || !cfg?.enabled) return;
+
+    // Don't re-book the same (race, horse) within this window. Match open
+    // pure-steam bets, plus recently-placed ones so a settled steamer isn't
+    // re-fired for the rest of the race — but not so long that tomorrow's reuse
+    // of the same TVG raceId is blocked.
+    const REBOOK_BLOCK_MS = 4 * 60 * 60_000;
+    const existing = new Set(
+      Tickets.list()
+        .filter(t => t.strategyId === PURE_STEAM_ID
+          && (t.status === "open" || t.placedAt > now - REBOOK_BLOCK_MS))
+        .map(t => `${t.raceId}:${t.selections[0]}`),
+    );
+
+    for (const race of races) {
+      if (!strategyAppliesToTrack(strat.appliesTo, race.trackType)) continue;
+      const triggers = detectSteamTriggers(race, now);
+      for (const trig of triggers) {
+        const key = `${race.id}:${trig.program}`;
+        if (existing.has(key)) continue;
+        existing.add(key);
+        const ticket: Ticket = {
+          id: `auto_${PURE_STEAM_ID}_${now}_${Math.random().toString(36).slice(2, 6)}`,
+          raceId: race.id,
+          trackCode: race.trackCode,
+          raceNumber: race.raceNumber,
+          trackName: race.track,
+          horseName: trig.name,
+          type: "WIN",
+          selections: [trig.program],
+          stake: 0,                        // measure-only — no real exposure
+          potentialPayout: 0,
+          capturedEV: 0,                   // no EV claim; steam magnitude below
+          capturedOdds: trig.odds,
+          stagedEV: trig.crushPct,         // repurposed: late-crush % for analysis
+          placedAt: now,
+          postTime: race.postTime,
+          status: "open",
+          mode: "auto",
+          strategyId: PURE_STEAM_ID,
+          shadow: true,
+          shadowStake: cfg.stake,
+          reason:
+            `Pure-steam: #${trig.program} ${trig.name} crushed ${trig.crushPct.toFixed(0)}% late ` +
+            `(${trig.refOdds.toFixed(1)}→${trig.odds.toFixed(1)}) @ ${trig.fractionalOdds} · measure-only`,
+        };
+        Tickets.add(ticket);
+        this.note(
+          `[${PURE_STEAM_ID}] SHADOW BET ${race.trackCode} R${race.raceNumber} #${trig.program} ${trig.name} ` +
+          `· late crush ${trig.crushPct.toFixed(0)}% (${trig.refOdds.toFixed(1)}→${trig.odds.toFixed(1)}) · $${cfg.stake.toFixed(2)} shadow`,
+        );
+      }
+    }
+  }
+
   // Pre-off odds snapshot — the latest snapshot before settle becomes the
   // ticket's `closingOdds` (used for CLV) and `closingEV` (the truthful grading
   // metric — model EV at the moment the gates broke). We capture both the
@@ -875,10 +944,7 @@ class Engine {
           capturedEV: evaluation.evPercent,
           capturedEVRaw: runner.evPercentRaw,
           capturedTrueP: refreshTrueP,
-          // Steam controls (noEvThesis) always match, so refreshing capturedOdds
-          // every tick would reset the stage→fire crush reference and the
-          // fireCrushBand could never trigger. Freeze the baseline at first stage.
-          ...(strategy.noEvThesis ? {} : { capturedOdds: runner.currentOdds }),
+          capturedOdds: runner.currentOdds,
           reason: evaluation.reason,
         });
         return "refreshed";
@@ -970,7 +1036,8 @@ const cachedAutobook = globalThis.__toteflowAutobook;
 const autobookStale = !!cachedAutobook && (
   typeof (cachedAutobook as any).bookMultiLegTicket !== "function" ||
   typeof (cachedAutobook as any).bookCarryoverTicket !== "function" ||
-  typeof (cachedAutobook as any).promoteStagedTickets !== "function"
+  typeof (cachedAutobook as any).promoteStagedTickets !== "function" ||
+  typeof (cachedAutobook as any).scanSteam !== "function"
 );
 export const autobook = (cachedAutobook && !autobookStale)
   ? cachedAutobook
