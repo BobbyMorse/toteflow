@@ -20,6 +20,7 @@ import { trifectaKeyStrategy } from "./trifecta-key";
 import { ddConsensusStrategy } from "./dd-consensus";
 import { pureSteamStrategy } from "./pure-steam";
 import { variantStrategy } from "./variants";
+import { MEASURE_ONLY_STRATEGY_IDS } from "./measure-only";
 
 // Base strategies — all currently apply to thoroughbred. tvg-baseline is
 // excluded from the auto-variant map because its harness/QH versions need
@@ -67,6 +68,23 @@ export const strategies: Strategy[] = [
   ...quarterHorseVariants,
   ...jumpsVariants,
 ];
+
+// Keep the client-safe MEASURE_ONLY_STRATEGY_IDS mirror honest: it must match
+// exactly the strategies that declare `measureOnly`. Fail loudly at load if they
+// drift so a new measure-only strategy can't silently render as a dead $0 row.
+{
+  const registryMeasureOnly = new Set(strategies.filter(s => s.measureOnly).map(s => s.id));
+  for (const id of registryMeasureOnly) {
+    if (!MEASURE_ONLY_STRATEGY_IDS.has(id)) {
+      throw new Error(`measureOnly strategy "${id}" is missing from MEASURE_ONLY_STRATEGY_IDS (lib/strategies/measure-only.ts)`);
+    }
+  }
+  for (const id of MEASURE_ONLY_STRATEGY_IDS) {
+    if (!registryMeasureOnly.has(id)) {
+      throw new Error(`MEASURE_ONLY_STRATEGY_IDS lists "${id}" but no strategy with that id declares measureOnly`);
+    }
+  }
+}
 
 export function getStrategy(id: string): Strategy | undefined {
   return strategies.find(s => s.id === id);

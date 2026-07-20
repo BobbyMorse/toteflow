@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { apiUrl } from "@/lib/api-url";
 import { fanduelRaceUrl } from "@/lib/verification";
+import { isMeasureOnly } from "@/lib/strategies/measure-only";
 import clsx from "clsx";
 
 interface StrategyAnalytics {
@@ -411,8 +412,19 @@ function StrategyGroup({
 }
 
 function StrategyCard({ s, kind }: { s: StrategyAnalytics; kind: "working" | "losing" | "undecided" }) {
-  const roiCls = s.roi == null ? "text-ink-2" : s.roi >= 0 ? "text-accent-overlay" : "text-accent-steam";
-  const plCls = s.realizedPL >= 0 ? "text-accent-overlay" : "text-accent-steam";
+  // Measure-only strategies (e.g. pure-steam) never bank a real bet — every fire
+  // is a $0 shadow — so their bankroll-true row is permanently 0 / — / $0. The
+  // actual measured record is the shadowed slice; surface THAT as the headline
+  // numbers (marked hypothetical) instead of a dead zero row.
+  const measureOnly = isMeasureOnly(s.id);
+  const dSettled = measureOnly ? s.attribution.settled : s.settled;
+  const dHitRate = measureOnly ? s.attribution.hitRate : s.hitRate;
+  const dRoi = measureOnly ? s.attribution.roi : s.roi;
+  const dRoiLow = measureOnly ? s.attribution.roiCI95Low : s.roiCI95Low;
+  const dRoiHigh = measureOnly ? s.attribution.roiCI95High : s.roiCI95High;
+  const dPL = measureOnly ? s.attribution.realizedPL : s.realizedPL;
+  const roiCls = dRoi == null ? "text-ink-2" : dRoi >= 0 ? "text-accent-overlay" : "text-accent-steam";
+  const plCls = dPL >= 0 ? "text-accent-overlay" : "text-accent-steam";
   const clvCls = s.avgClv == null ? "text-ink-2" : s.avgClv >= 0 ? "text-accent-overlay" : "text-accent-steam";
   const closeCls = s.avgClosingEV == null ? "text-ink-2" : s.avgClosingEV >= 0 ? "text-accent-overlay" : "text-accent-steam";
   const capCls = s.avgCapturedEV == null ? "text-ink-2" : s.avgCapturedEV >= 0 ? "text-accent-overlay" : "text-accent-steam";
@@ -424,10 +436,18 @@ function StrategyCard({ s, kind }: { s: StrategyAnalytics; kind: "working" | "lo
   return (
     <div className={clsx("panel p-3 sm:p-4 flex flex-wrap items-center gap-x-4 sm:gap-x-6 gap-y-3", borderCls)}>
       <div className="flex-1 min-w-[140px]">
-        <div className="font-mono text-sm sm:text-base text-ink-0 break-all">{s.id}</div>
+        <div className="font-mono text-sm sm:text-base text-ink-0 break-all flex items-center gap-2">
+          {s.id}
+          {measureOnly && (
+            <span className="chip border border-line/60 bg-bg-1 text-ink-2 text-[10px] normal-case tracking-normal"
+              title="Measure-only: books every bet as a $0 shadow by design — never touches the bankroll. The numbers below are the hypothetical record at its shadow stake.">
+              measure-only
+            </span>
+          )}
+        </div>
         <div className="text-[11px] sm:text-xs text-ink-2 mt-0.5">
-          {s.settled} settled{s.open > 0 ? ` · ${s.open} open` : ""} · hit{" "}
-          {s.hitRate == null ? "—" : `${(s.hitRate * 100).toFixed(0)}%`}
+          {dSettled} settled{s.open > 0 ? ` · ${s.open} open` : ""} · hit{" "}
+          {dHitRate == null ? "—" : `${(dHitRate * 100).toFixed(0)}%`}
           {s.avgClv != null && (
             <> · CLV <span className={clvCls}>{s.avgClv >= 0 ? "+" : ""}{(s.avgClv * 100).toFixed(1)}%</span></>
           )}
@@ -487,7 +507,16 @@ function StrategyCard({ s, kind }: { s: StrategyAnalytics; kind: "working" | "lo
             distorts the strategy's record. This line credits them at the stake
             it would have bet. Only shown when there's a shadowed slice to
             explain. Never part of the bankroll. */}
-        {s.attribution.shadowSettled > 0 && (
+        {/* Measure-only strategies show their shadowed record as the headline
+            numbers already, so the "incl. shadowed" reconciliation line (whose
+            wording assumes the strategy was beaten to a real bet) would be both
+            redundant and misleading. Explain the $0-shadow design instead. */}
+        {measureOnly ? (
+          <div className="text-[10px] sm:text-[11px] mt-0.5 text-ink-2">
+            hypothetical at the strategy&apos;s shadow stake · never touches the bankroll ·{" "}
+            {s.attribution.shadowWon}/{s.attribution.shadowSettled} winners
+          </div>
+        ) : s.attribution.shadowSettled > 0 && (
           <div className="text-[10px] sm:text-[11px] mt-0.5 text-ink-2"
             title="Includes picks this strategy was beaten to (booked as $0 shadows to avoid double-debiting the bankroll). Credited at the stake the strategy would have bet. This is for evaluating the strategy in isolation — it is NOT money spent and is not part of the bankroll.">
             <span className="font-semibold text-accent-cyan">incl. shadowed</span>:{" "}
@@ -515,21 +544,22 @@ function StrategyCard({ s, kind }: { s: StrategyAnalytics; kind: "working" | "lo
 
       <div className="text-right">
         <div className={clsx("text-lg sm:text-2xl font-mono font-semibold tabular-nums", roiCls)}>
-          {s.roi == null ? "—" : `${s.roi >= 0 ? "+" : ""}${(s.roi * 100).toFixed(1)}%`}
+          {dRoi == null ? "—" : `${dRoi >= 0 ? "+" : ""}${(dRoi * 100).toFixed(1)}%`}
         </div>
         <div className="text-[10px] sm:text-[11px] text-ink-2">
-          ROI
-          {s.roiCI95Low != null && s.roiCI95High != null && (
-            <> <span className="font-mono">[{(s.roiCI95Low * 100).toFixed(0)}, {(s.roiCI95High * 100).toFixed(0)}]</span></>
+          {measureOnly ? "ROI (shadow)" : "ROI"}
+          {dRoiLow != null && dRoiHigh != null && (
+            <> <span className="font-mono">[{(dRoiLow * 100).toFixed(0)}, {(dRoiHigh * 100).toFixed(0)}]</span></>
           )}
         </div>
       </div>
 
       <div className="text-right border-l border-line/40 pl-3 sm:pl-6">
-        <div className={clsx("text-base sm:text-xl font-mono font-semibold tabular-nums", plCls)}>
-          {s.realizedPL >= 0 ? "+" : ""}${s.realizedPL.toFixed(0)}
+        <div className={clsx("text-base sm:text-xl font-mono font-semibold tabular-nums", plCls)}
+          title={measureOnly ? "Hypothetical P/L at the shadow stake — measure-only, never part of the bankroll" : undefined}>
+          {measureOnly ? "~" : ""}{dPL >= 0 ? "+" : ""}${dPL.toFixed(0)}
         </div>
-        <div className="text-[10px] sm:text-[11px] text-ink-2">realized</div>
+        <div className="text-[10px] sm:text-[11px] text-ink-2">{measureOnly ? "hypothetical" : "realized"}</div>
       </div>
     </div>
   );

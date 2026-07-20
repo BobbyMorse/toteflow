@@ -8,6 +8,7 @@ import { decideBetWindow, type BetWindowDecision } from "@/lib/optimal-timer";
 import { apiUrl } from "@/lib/api-url";
 import type { AutobookState } from "@/lib/autobook-view";
 import { strategyCalibratedTrueP, evPercentFromTrueP } from "@/lib/strategy-calibration";
+import { isMeasureOnly } from "@/lib/strategies/measure-only";
 import Link from "next/link";
 import clsx from "clsx";
 
@@ -1032,7 +1033,20 @@ function LogPanel({ title, entries }: { title: string; entries: { ts: number; ms
 
 function TicketRow({ ticket: t }: { ticket: Ticket }) {
   const settled = t.status === "won" || t.status === "lost";
-  const pl = t.realizedPL ?? 0;
+  // Measure-only strategies (e.g. pure-steam) book every bet as a $0 shadow, so
+  // realizedPL is always 0 and the real outcome lives in shadowPL. Show that
+  // hypothetical instead — otherwise a winner reads as a misleading "+$0.00".
+  const measureOnly = isMeasureOnly(t.strategyId);
+  const pl = measureOnly ? (t.shadowPL ?? 0) : (t.realizedPL ?? 0);
+  const modeLabel = measureOnly ? "measure" : t.shadow ? "shadow" : t.mode;
+  const modeTitle = measureOnly
+    ? "Measure-only: this strategy books every bet as a $0 shadow by design — it never touches the bankroll. P/L shown is the hypothetical result at its shadow stake; the aggregate lives in the shadowed slice on Analytics."
+    : t.shadow
+      ? "Shadow: another strategy already covered this bet — tracked for attribution, no bankroll"
+      : undefined;
+  const plTitle = measureOnly
+    ? "Hypothetical P/L at the strategy's shadow stake — measure-only, never touches the bankroll"
+    : undefined;
   // CLV = WIN-only — the closing snapshot stores WIN-pool odds; PLACE/SHOW/
   // exotic bets aren't scored against that pool.
   const clv = t.type === "WIN" && t.closingOdds && t.capturedOdds
@@ -1119,8 +1133,8 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
                 : t.mode === "auto"
                   ? "border-accent-cyan/40 bg-accent-cyan/10 text-accent-cyan"
                   : "border-line text-ink-2",
-            )} title={t.shadow ? "Shadow: another strategy already covered this bet — tracked for attribution, no bankroll" : undefined}>
-              {t.shadow ? "shadow" : t.mode}
+            )} title={modeTitle}>
+              {modeLabel}
             </span>
             {!settled ? (
               <span className="chip border border-line text-ink-2">{t.status}</span>
@@ -1184,8 +1198,8 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
         {settled && (
           <div className="flex items-baseline gap-x-3 gap-y-0.5 flex-wrap text-xs font-mono tabular-nums">
             <span className={clsx("font-semibold",
-              pl >= 0 ? "text-accent-overlay" : "text-accent-steam")}>
-              P/L {pl >= 0 ? "+" : ""}${pl.toFixed(2)}
+              pl >= 0 ? "text-accent-overlay" : "text-accent-steam")} title={plTitle}>
+              P/L {measureOnly ? "~" : ""}{pl >= 0 ? "+" : ""}${pl.toFixed(2)}
             </span>
             {clv != null && (
               <span className={clsx(
@@ -1218,8 +1232,8 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
             : t.mode === "auto"
               ? "border-accent-cyan/40 bg-accent-cyan/10 text-accent-cyan"
               : "border-line text-ink-2",
-        )} title={t.shadow ? "Shadow: another strategy already covered this bet — tracked for attribution, no bankroll" : undefined}>
-          {t.shadow ? "shadow" : t.mode}
+        )} title={modeTitle}>
+          {modeLabel}
         </span>
         <Link href={`/race/${t.raceId}`} className="font-mono truncate leading-tight flex flex-col">
           <span className="text-accent-cyan">
@@ -1303,8 +1317,8 @@ function TicketRow({ ticket: t }: { ticket: Ticket }) {
                 {t.status}
               </span>
               <span className={clsx("font-mono tabular-nums text-xs mt-0.5",
-                pl >= 0 ? "text-accent-overlay" : "text-accent-steam")}>
-                {pl >= 0 ? "+" : ""}${pl.toFixed(2)}
+                pl >= 0 ? "text-accent-overlay" : "text-accent-steam")} title={plTitle}>
+                {measureOnly ? "~" : ""}{pl >= 0 ? "+" : ""}${pl.toFixed(2)}
               </span>
               {clv != null && (
                 <span className={clsx("font-mono tabular-nums text-[10px]",
