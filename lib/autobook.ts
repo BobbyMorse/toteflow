@@ -150,8 +150,19 @@ class Engine {
     const evalCount: Record<string, { evaluated: number; matched: number; belowThreshold: number; staged: number; pivoted: number; refreshed: number }> = {};
     for (const s of strategies) evalCount[s.id] = { evaluated: 0, matched: 0, belowThreshold: 0, staged: 0, pivoted: 0, refreshed: 0 };
 
+    // Open tickets from strategies that gate on closing EV, indexed by race —
+    // computed once per tick so snapshotOdds can stamp each with the strategy's
+    // fresh closing-pool EV without re-scanning ticket history per race.
+    const openGatedByRace = new Map<string, Ticket[]>();
+    for (const t of Tickets.list()) {
+      if (t.status !== "open") continue;
+      if (!strategies.find(s => s.id === t.strategyId)?.gateOnClosingEV) continue;
+      const arr = openGatedByRace.get(t.raceId);
+      if (arr) arr.push(t); else openGatedByRace.set(t.raceId, [t]);
+    }
+
     for (const r of races) {
-      this.snapshotOdds(r);
+      this.snapshotOdds(r, openGatedByRace.get(r.id));
       for (const s of strategies) {
         const result = this.considerStrategy(s, r, now);
         evalCount[s.id].evaluated++;
@@ -741,7 +752,7 @@ class Engine {
   // metric — model EV at the moment the gates broke). We capture both the
   // capped EV (what strategies see) and the raw model EV (what the model
   // actually thinks) so settled tickets can show the unclipped closing value.
-  private snapshotOdds(race: Race) {
+  private snapshotOdds(race: Race, openGated?: Ticket[]) {
     const odds: Record<string, number> = {};
     const ev: Record<string, number> = {};
     const evRaw: Record<string, number> = {};
@@ -761,6 +772,23 @@ class Engine {
     // Persist the whole field to SQLite (throttled, closing window only) —
     // the calibration training set. See lib/runner-snapshots.ts.
     persistClosingSnapshot(race);
+
+    // Stamp the closing-EV gate value on any open ticket whose strategy opts in
+    // (gateOnClosingEV). We re-price the strategy's OWN thesis for the exact bet
+    // against this snapshot's pool — Dr.Z place EV for our horse, or the box EV
+    // for our exact trio — and keep the latest write. Because we can't predict
+    // the actual off (drag is unbounded), we simply keep overwriting every tick;
+    // whatever the last pre-off snapshot saw is the closing value the grader
+    // reads. Only rewrite when the value actually moves, to avoid db churn.
+    if (openGated?.length) {
+      for (const t of openGated) {
+        const strat = strategies.find(s => s.id === t.strategyId);
+        const closeEv = strat?.closingEVFor?.(race, t.selections) ?? null;
+        if (closeEv != null && Math.abs((t.closingStrategyEV ?? Number.NaN) - closeEv) > 0.01) {
+          Tickets.update(t.id, { closingStrategyEV: closeEv });
+        }
+      }
+    }
   }
 
   private considerStrategy(strategy: Strategy, race: Race, now: number): "staged" | "pivoted" | "refreshed" | "matched" | "below-threshold" | "skipped" {

@@ -2,7 +2,8 @@
 // tickets, computes realized P/L and closing-line value (CLV). Also pushes
 // every observed final race into RaceResults so same-day strategies (like
 // track-bias) have a shared history to query.
-import { Tickets, Closing, deriveClosingEV } from "./storage";
+import { Tickets, Closing, AutoBook, deriveClosingEV } from "./storage";
+import { strategies } from "./strategies";
 import { RaceResults } from "./race-results";
 import { stampSnapshotResults, purgeUnstampedSnapshots } from "./runner-snapshots";
 import type { Ticket } from "./types";
@@ -125,7 +126,7 @@ function isScratched(rn: TvgResultRunner | undefined): boolean {
 class Grader {
   // Marker bumped whenever settle logic adds new ticket types — read by the
   // HMR staleness check below so dev reloads pick up the new settle paths.
-  readonly version = 6;
+  readonly version = 7;
   started = false;
   lastTick = 0;
   inFlight: Promise<void> | null = null;
@@ -365,7 +366,6 @@ class Grader {
       }
     }
     const plAtStake = won ? payout - stakeForPayout : -stakeForPayout;
-    const realizedPL = t.shadow ? 0 : plAtStake;
     const closingOdds = Closing.oddsFor(t.raceId, selected);
     // Closing EV grades the bet WE locked in, not a hypothetical bet at the
     // closing price. Scale captured EV by the odds drift — this holds the
@@ -398,7 +398,7 @@ class Grader {
     }
     // Raw mirror — same formula, kept for back-compat with rows that
     // distinguished raw vs capped before the cap was removed.
-    const closingEVRaw = t.type === "PLACE"
+    let closingEVRaw = t.type === "PLACE"
       ? closingEV
       : deriveClosingEV({
           type: t.type,
@@ -407,19 +407,57 @@ class Grader {
           closingOdds,
         }) ?? Closing.evRawFor(t.raceId, selected);
 
+    // Closing-EV gate (opt-in via Strategy.gateOnClosingEV). The strategy's own
+    // edge for THIS exact bet was re-priced against the closing pool each tick
+    // and stamped as closingStrategyEV. If it didn't survive to the configured
+    // threshold, the fire was optimistic relative to the close — bank the bet as
+    // SHADOW (real P&L → 0, hypothetical preserved in shadowPL) rather than
+    // charge the real book. We can't fire at the close (drag is unbounded), so
+    // this is a settlement reclassification, not a placement gate. A null
+    // closingStrategyEV means we never caught a post-fire snapshot to measure,
+    // so we don't get to void it — it stays a real bet.
+    const strat = strategies.find(s => s.id === t.strategyId);
+    const gateThreshold = AutoBook.strategyConfig(t.strategyId ?? "")?.evThreshold ?? 0;
+    const gateShadow = !!strat?.gateOnClosingEV
+      && !t.shadow
+      && t.closingStrategyEV != null
+      && t.closingStrategyEV < gateThreshold;
+    const isShadow = t.shadow || gateShadow;
+    const realizedPL = isShadow ? 0 : plAtStake;
+    // For gated strategies the honest closing EV is the strategy's own re-priced
+    // number, not the WIN-odds-scaled proxy above (which for a trifecta is just
+    // the key horse's WIN EV). Surface it as closingEV so the dashboard's "close
+    // EV" matches what the gate actually measured.
+    if (strat?.gateOnClosingEV && t.closingStrategyEV != null) {
+      closingEV = t.closingStrategyEV;
+      closingEVRaw = t.closingStrategyEV;
+    }
+
     Tickets.update(t.id, {
       status: won ? "won" : "lost",
       settledAt: Date.now(),
       realizedPL,
-      ...(t.shadow ? { shadowPL: plAtStake } : {}),
+      ...(isShadow ? {
+        shadow: true,
+        shadowStake: t.shadow ? (t.shadowStake ?? 0) : t.stake,
+        shadowPL: plAtStake,
+      } : {}),
       winners: finishOrder,
       closingOdds,
       closingEV,
       closingEVRaw,
       ...(won ? { payoutSource } : {}),
+      ...(gateShadow ? {
+        abortReason:
+          `closing-EV gate: ${t.closingStrategyEV!.toFixed(1)}% < ${gateThreshold}% at the close — ` +
+          `edge did not survive; banked as shadow (real P&L 0, hypothetical ${plAtStake >= 0 ? "+" : ""}$${plAtStake.toFixed(2)})`,
+      } : {}),
     });
 
     const tag = t.strategyId ? `[${t.strategyId}] ` : "";
+    const gateTag = gateShadow
+      ? ` · SHADOW-close-gate (${t.closingStrategyEV!.toFixed(1)}% < ${gateThreshold}%)`
+      : "";
     // CLV only meaningful for single-race WIN bets — closing snapshot is WIN-only.
     const clvNote = t.type === "WIN" && closingOdds && t.capturedOdds
       ? ` · CLV ${(((t.capturedOdds - closingOdds) / closingOdds) * 100).toFixed(1)}%`
@@ -430,7 +468,7 @@ class Grader {
       : "";
     this.note(
       `${tag}SETTLE ${t.raceId} ${t.type} ${pickLabel} ${won ? "WON" : "lost"}${exoticTag} ` +
-      `P/L ${realizedPL >= 0 ? "+" : ""}$${realizedPL.toFixed(2)}${clvNote}  finish: ${finishOrder.join("-")}`,
+      `P/L ${realizedPL >= 0 ? "+" : ""}$${realizedPL.toFixed(2)}${gateTag}${clvNote}  finish: ${finishOrder.join("-")}`,
     );
   }
 
@@ -549,7 +587,7 @@ const cachedGrader = globalThis.__toteflowGrader;
 const graderStale = !!cachedGrader && (
   typeof (cachedGrader as any).settlePickN !== "function" ||
   typeof (cachedGrader as any).sweepStaleOpen !== "function" ||
-  ((cachedGrader as any).version ?? 0) < 6
+  ((cachedGrader as any).version ?? 0) < 7
 );
 export const grader = (cachedGrader && !graderStale)
   ? cachedGrader

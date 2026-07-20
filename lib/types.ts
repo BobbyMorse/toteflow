@@ -133,6 +133,15 @@ export interface Ticket {
   closingEV?: number;       // model EV at race-off — the truthful grading metric
                             // (captured EV is frozen at fire time and stops
                             // reflecting reality once odds move).
+  // The ORIGINATING strategy's own EV for THIS exact bet, recomputed against
+  // the closing pool composition and stamped by the autobook's per-tick
+  // snapshotter (last write before the race leaves the feed = the closing
+  // line — no off-time prediction needed). Only populated for strategies that
+  // opt into `gateOnClosingEV`. Distinct from closingEV, which for exotics is
+  // only a key-horse WIN-EV proxy: this re-runs the strategy's real thesis
+  // (Dr.Z place EV / trifecta box EV) at close. The grader gates on it at
+  // settle: a bet whose edge didn't survive to here is reclassified to shadow.
+  closingStrategyEV?: number;
   // Legacy mirrors of capturedEV / closingEV. Originally tracked the uncapped
   // EV separately from a +25%-capped capturedEV/closingEV. The cap has since
   // been removed, so for new tickets these equal their non-Raw twin; kept on

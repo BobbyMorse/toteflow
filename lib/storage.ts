@@ -116,6 +116,7 @@ function rowToTicket(row: any): Ticket {
     closingEV: row.closingEV ?? undefined,
     capturedEVRaw: row.capturedEVRaw ?? undefined,
     closingEVRaw: row.closingEVRaw ?? undefined,
+    closingStrategyEV: row.closingStrategyEV ?? undefined,
     capturedTrueP: row.capturedTrueP ?? undefined,
     shadow: row.shadow ? true : undefined,
     shadowStake: row.shadowStake ?? undefined,
@@ -133,13 +134,13 @@ const stmtInsertTicket = db.prepare(`
     id, raceId, trackCode, trackName, raceNumber, horseName, type, selections,
     stake, potentialPayout, capturedEV, stagedEV, capturedEVRaw, capturedTrueP, capturedOdds, placedAt, postTime,
     status, mode, strategyId, reason, settledAt, realizedPL, winners,
-    closingOdds, closingEV, closingEVRaw, shadow, shadowStake, shadowPL, legs,
+    closingOdds, closingEV, closingEVRaw, closingStrategyEV, shadow, shadowStake, shadowPL, legs,
     stagedAt, abortedAt, abortReason, payoutSource
   ) VALUES (
     @id, @raceId, @trackCode, @trackName, @raceNumber, @horseName, @type, @selections,
     @stake, @potentialPayout, @capturedEV, @stagedEV, @capturedEVRaw, @capturedTrueP, @capturedOdds, @placedAt, @postTime,
     @status, @mode, @strategyId, @reason, @settledAt, @realizedPL, @winners,
-    @closingOdds, @closingEV, @closingEVRaw, @shadow, @shadowStake, @shadowPL, @legs,
+    @closingOdds, @closingEV, @closingEVRaw, @closingStrategyEV, @shadow, @shadowStake, @shadowPL, @legs,
     @stagedAt, @abortedAt, @abortReason, @payoutSource
   )
 `);
@@ -170,6 +171,7 @@ const stmtUpdateTicket = db.prepare(`
     closingOdds     = @closingOdds,
     closingEV       = @closingEV,
     closingEVRaw    = @closingEVRaw,
+    closingStrategyEV = @closingStrategyEV,
     shadow          = @shadow,
     shadowStake     = @shadowStake,
     shadowPL        = @shadowPL,
@@ -229,6 +231,7 @@ function ticketToRow(t: Ticket): Record<string, unknown> {
     closingOdds: t.closingOdds ?? null,
     closingEV: t.closingEV ?? null,
     closingEVRaw: t.closingEVRaw ?? null,
+    closingStrategyEV: t.closingStrategyEV ?? null,
     shadow: t.shadow ? 1 : 0,
     shadowStake: t.shadowStake ?? null,
     shadowPL: t.shadowPL ?? null,
@@ -470,6 +473,7 @@ export const Tickets = {
       closingOdds: t.closingOdds ?? null,
       closingEV: t.closingEV ?? null,
       closingEVRaw: t.closingEVRaw ?? null,
+      closingStrategyEV: t.closingStrategyEV ?? null,
       shadow: t.shadow ? 1 : 0,
       shadowStake: t.shadowStake ?? null,
       shadowPL: t.shadowPL ?? null,

@@ -214,6 +214,9 @@ function applySchema(db: Database.Database): void {
   if (!ticketCols.has("shadowPL")) {
     db.exec("ALTER TABLE tickets ADD COLUMN shadowPL REAL");
   }
+  if (!ticketCols.has("closingStrategyEV")) {
+    db.exec("ALTER TABLE tickets ADD COLUMN closingStrategyEV REAL");
+  }
 
   const v = (db.prepare("SELECT value FROM meta WHERE key = 'schemaVersion'").get() as { value: string } | undefined)?.value;
   if (!v) {

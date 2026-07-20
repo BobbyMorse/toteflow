@@ -74,6 +74,28 @@ export interface Strategy {
   // exists. Opt-in only — WIN-model strategies deliberately do NOT re-gate
   // at fire (see the drift-gate removal note in autobook.ts).
   refireAtThreshold?: boolean;
+  // When true, the strategy's edge is re-measured against the CLOSING pool and
+  // the bet only counts as real if that closing edge still clears the
+  // configured evThreshold. Because drag (the gap between scheduled post and
+  // the actual off) is unpredictable, we can't fire at the close — so this is
+  // a SETTLEMENT gate, not a placement gate: the autobook's per-tick
+  // snapshotter stamps `closingStrategyEV` (the strategy's own EV for the exact
+  // bet, recomputed on the last pre-off pool it sees), and at settle the grader
+  // reclassifies any ticket below threshold to SHADOW — real P&L → 0, the
+  // hypothetical outcome preserved in shadowPL. For strategies whose fire-time
+  // EV is systematically optimistic relative to the close (dr-z-place: place
+  // pool keeps converging after fire; trifecta-key: model-vs-market edge
+  // decays into the pool), so the fire number can't be the book's verdict.
+  gateOnClosingEV?: boolean;
+  // Recompute the strategy's OWN edge for an already-placed bet (its exact
+  // selections) against a given pool — used by the autobook snapshotter to
+  // stamp closingStrategyEV on the closing pool. Required when gateOnClosingEV
+  // is set. Routing this through the strategy (rather than the snapshotter
+  // hard-coding the math) means discipline variants recalibrate the pool the
+  // same way they do for evaluate(), so the closing EV is priced at the same
+  // model weight the bet fired on. Returns null when the bet can't be priced
+  // against this pool (a selection scratched, pool data missing, etc.).
+  closingEVFor?(race: Race, selections: readonly string[]): number | null;
   // Steam-confirmation fire gate for single-runner WIN strategies: [lo, hi]
   // as percent of stage-time odds the price must have FALLEN by fire time.
   // Below lo the ticket keeps waiting (no market confirmation yet — only

@@ -75,5 +75,10 @@ export function variantStrategy(
     wrapped.evaluateCrossRace = (races: Race[]) =>
       crossRace(races.map(r => recalibrateRace(r, weight)));
   }
+  if (typeof base.closingEVFor === "function") {
+    const closingEVFor = base.closingEVFor.bind(base);
+    wrapped.closingEVFor = (race: Race, selections: readonly string[]) =>
+      closingEVFor(recalibrateRace(race, weight), selections);
+  }
   return wrapped;
 }

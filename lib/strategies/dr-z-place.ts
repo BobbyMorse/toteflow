@@ -224,6 +224,22 @@ export const drZPlaceStrategy: Strategy = {
   // The edge is a pool-composition read that converges away right up to off —
   // the fire-time re-eval, not the staged snapshot, must clear the threshold.
   refireAtThreshold: true,
+  // ...and even the fire-time re-eval is early relative to the close: place
+  // pools fill disproportionately in the final seconds, so a bet that clears
+  // +14% at fire routinely decays to a few percent by off (the realized ROI
+  // tracks the close, not the fire). Re-measure the Dr.Z place EV against the
+  // closing pool and only bank bets that still clear threshold there.
+  gateOnClosingEV: true,
+  // Closing gate: re-run the Dr.Z place EV for our exact horse against the
+  // closing pool. Pool amounts (not truePWin) drive this, so discipline
+  // recalibration is a no-op here — but going through the strategy keeps the
+  // gate uniform across strategies.
+  closingEVFor(race: Race, selections: readonly string[]): number | null {
+    const sel = selections[0];
+    if (!sel) return null;
+    const v = computePlaceEVs(race)[sel];
+    return v == null ? null : v;
+  },
   evaluate(race: Race) {
     const secondsToPost = (race.postTime - Date.now()) / 1000;
     // Stale-feed cutoff only. No lower bound — the promotion path re-runs
