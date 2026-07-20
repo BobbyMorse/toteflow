@@ -18,6 +18,7 @@ import { trackBiasStrategy } from "./track-bias";
 import { exactaOverlayPairStrategy } from "./exacta-overlay-pair";
 import { trifectaKeyStrategy } from "./trifecta-key";
 import { ddConsensusStrategy } from "./dd-consensus";
+import { pureSteamStrategy } from "./pure-steam";
 import { variantStrategy } from "./variants";
 
 // Base strategies — all currently apply to thoroughbred. tvg-baseline is
@@ -60,6 +61,8 @@ export const strategies: Strategy[] = [
   tvgBaselineJumpsStrategy,
   tvgSteamStrategy,
   tvgSteamHarnessStrategy,
+  // Measure-only control — not variant-expanded; one thoroughbred experiment.
+  pureSteamStrategy,
   ...harnessVariants,
   ...quarterHorseVariants,
   ...jumpsVariants,

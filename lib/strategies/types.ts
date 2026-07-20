@@ -105,6 +105,24 @@ export interface Strategy {
   // market has partially confirmed the model's pick), not a re-pricing of
   // every strategy's EV by a historical crush factor.
   fireCrushBand?: readonly [number, number];
+  // Measure-only: the strategy is a live experiment, never a real bet. Its
+  // promoted tickets are forced to SHADOW (real stake + realizedPL = 0, the
+  // hypothetical outcome tracked in shadowStake/shadowPL) regardless of whether
+  // any other strategy already covered the pick. Lets a new hypothesis run
+  // alongside the real book — accumulating a fully-graded track record — without
+  // touching the canonical bankroll or the ~hundreds-of-real-bets-a-day volume.
+  // Promoting an experiment to real money is a deliberate code change (flip this
+  // off), not a UI toggle.
+  measureOnly?: boolean;
+  // The strategy makes NO expected-value claim — its entry thesis is something
+  // other than model EV (e.g. pure market steam). Two effects at promote time:
+  // (1) the EV_FIRE_FLOOR (don't fire WIN bets at negative EV) is skipped, since
+  // a "no EV" pick has no meaningful fire-time EV to floor; (2) capturedEV/
+  // capturedTrueP are stored as neutral (0 / undefined) rather than a misleading
+  // model number. Also freezes the crush baseline (see considerStrategy): a
+  // no-EV strategy always matches, so without the freeze the refresh loop would
+  // reset capturedOdds every tick and a fireCrushBand could never trigger.
+  noEvThesis?: boolean;
 }
 
 export interface StrategyConfig {

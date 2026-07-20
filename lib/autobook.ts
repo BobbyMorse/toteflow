@@ -279,6 +279,12 @@ class Engine {
       // rows showing +60% when the strategy's reason string said +20%.
       const originStrategy = strategies.find(s => s.id === t.strategyId) ?? null;
 
+      // Measure-only strategies (live experiments) never commit real stake:
+      // force the ticket to shadow so real P&L stays 0 and only shadowPL
+      // accrues — same mechanism as bankroll-dedup shadowing, different cause.
+      const noEv = !!originStrategy?.noEvThesis;
+      const forceShadow = isShadow || !!originStrategy?.measureOnly;
+
       // Steam-confirm gate (opt-in via Strategy.fireCrushBand): fire only
       // when the live price has fallen into the band relative to stage-time
       // odds (t.capturedOdds still holds the match-time odds here — it is
@@ -373,21 +379,21 @@ class Engine {
         // stores the key horse's live WIN odds for provenance only (so the
         // UI can show what the chalk looked like at fire time).
         const stagedStake = t.stake;
-        const liveStake = isShadow ? 0 : stagedStake;
+        const liveStake = forceShadow ? 0 : stagedStake;
         Tickets.update(t.id, {
           status: "open",
           stake: liveStake,
-          shadowStake: isShadow ? stagedStake : undefined,
+          shadowStake: forceShadow ? stagedStake : undefined,
           capturedOdds: liveOdds,
           // capturedEV stays at the strategy's match-time exotic-pool EV;
           // there's no honest "live EV" for an exacta from per-runner data.
           stagedEV: t.capturedEV,
           placedAt: now,
-          shadow: isShadow || undefined,
+          shadow: forceShadow || undefined,
         });
         promoted++;
         this.note(
-          `[${t.strategyId ?? "?"}] ${isShadow ? "SHADOW " : ""}FIRE ${t.raceId} ${t.type} #${t.selections.join("-")} ` +
+          `[${t.strategyId ?? "?"}] ${forceShadow ? "SHADOW " : ""}FIRE ${t.raceId} ${t.type} #${t.selections.join("-")} ` +
           `key @ ${runner.fractionalOdds} · stake $${liveStake.toFixed(2)} · est payout $${t.potentialPayout.toFixed(0)} ` +
           `(${decision.status === "LOCKED" ? "T-15s lock" : "EV peaked"})`,
         );
@@ -430,7 +436,7 @@ class Engine {
       }
 
       const baseStake = cfg?.stake ?? t.stake ?? 0;
-      const liveStake = isShadow ? 0 : baseStake;
+      const liveStake = forceShadow ? 0 : baseStake;
 
       // Hard floor: don't fire single-runner bets with negative EV at fire time.
       // This catches cases where odds drifted enough to flip EV negative between
@@ -447,7 +453,7 @@ class Engine {
       // priced in once: the 0.30 calibration weight was fitted against realized
       // closing-price payoffs. Keep lib/odds-drift.ts for analysis, not gating.
       const EV_FIRE_FLOOR = 0;
-      if (liveEv < EV_FIRE_FLOOR) {
+      if (!noEv && liveEv < EV_FIRE_FLOOR) {
         Tickets.update(t.id, {
           status: "aborted",
           abortedAt: now,
@@ -463,7 +469,7 @@ class Engine {
       // a failure here means something genuinely weird, not the known
       // staged-EV-at-stale-odds fallback.
       const isConsistent = validateEVConsistency(liveTrueP, fireEv, liveOdds, fireTakeout);
-      if (!isConsistent && liveTrueP != null && liveOdds) {
+      if (!noEv && !isConsistent && liveTrueP != null && liveOdds) {
         const recomputedEV = evPercentFromTrueP(liveTrueP, liveOdds, fireTakeout);
         this.note(
           `[${t.strategyId ?? "?"}] ⚠ EV consistency check failed on ${t.raceId} #${selection}: ` +
@@ -475,20 +481,22 @@ class Engine {
       Tickets.update(t.id, {
         status: "open",
         stake: liveStake,
-        shadowStake: isShadow ? baseStake : undefined,
+        shadowStake: forceShadow ? baseStake : undefined,
         capturedOdds: liveOdds,
-        capturedEV: fireEv,
+        // No-EV strategies (steam controls) make no model claim — store neutral
+        // EV/trueP rather than a misleading number derived from the adapter blend.
+        capturedEV: noEv ? 0 : fireEv,
         stagedEV: t.capturedEV,
         capturedEVRaw: liveEvRaw,
-        capturedTrueP: liveTrueP,
+        capturedTrueP: noEv ? undefined : liveTrueP,
         potentialPayout: liveStake * liveOdds,
         placedAt: now,
-        shadow: isShadow || undefined,
+        shadow: forceShadow || undefined,
         ...(calibratedReason ? { reason: calibratedReason } : {}),
       });
       promoted++;
       this.note(
-        `[${t.strategyId ?? "?"}] ${isShadow ? "SHADOW " : ""}FIRE ${t.raceId} #${selection} ` +
+        `[${t.strategyId ?? "?"}] ${forceShadow ? "SHADOW " : ""}FIRE ${t.raceId} #${selection} ` +
         `@ ${runner.fractionalOdds} fire EV ${fireEv >= 0 ? "+" : ""}${fireEv.toFixed(1)}%` +
         (Math.abs(fireEv - t.capturedEV) > 1 ? ` (staged ${t.capturedEV >= 0 ? "+" : ""}${t.capturedEV.toFixed(1)}%)` : "") +
         ` (${decision.status === "LOCKED" ? "T-15s lock" : "EV peaked"})`,
@@ -867,7 +875,10 @@ class Engine {
           capturedEV: evaluation.evPercent,
           capturedEVRaw: runner.evPercentRaw,
           capturedTrueP: refreshTrueP,
-          capturedOdds: runner.currentOdds,
+          // Steam controls (noEvThesis) always match, so refreshing capturedOdds
+          // every tick would reset the stage→fire crush reference and the
+          // fireCrushBand could never trigger. Freeze the baseline at first stage.
+          ...(strategy.noEvThesis ? {} : { capturedOdds: runner.currentOdds }),
           reason: evaluation.reason,
         });
         return "refreshed";

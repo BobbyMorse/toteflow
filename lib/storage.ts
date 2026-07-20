@@ -53,6 +53,12 @@ const defaultPerStrategy: Record<string, StrategyConfig> = {
   // Steam-confirm: tvg-baseline entry + 15-35% crush fire gate (see
   // lib/strategies/tvg-baseline.ts for the cohort audit behind the band).
   "tvg-steam":      { enabled: true,  evThreshold: 10, stake: 20, fireAtPhase: "action" },
+  // Pure-steam control — measure-only (Strategy.measureOnly forces every fire to
+  // shadow, so this never touches the bankroll). evThreshold below the fixed
+  // evPercent=0 so the no-model pick always stages; the crush gate does the
+  // real filtering. shadowStake basis = 20 to match tvg-steam for a like-for-
+  // like ROI comparison.
+  "pure-steam":     { enabled: true,  evThreshold: -100, stake: 20, fireAtPhase: "action" },
   // Disabled — never validated, no signal yet
   "lone-speed":     { enabled: false, evThreshold: 5,  stake: 20, fireAtPhase: "action" },
   "always-fav":     { enabled: false, evThreshold: -100, stake: 20, fireAtPhase: "action" },
