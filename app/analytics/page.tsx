@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { apiUrl } from "@/lib/api-url";
 import { fanduelRaceUrl } from "@/lib/verification";
 import { isMeasureOnly } from "@/lib/strategies/measure-only";
+import Link from "next/link";
 import clsx from "clsx";
 
 interface StrategyAnalytics {
@@ -434,7 +435,9 @@ function StrategyCard({ s, kind }: { s: StrategyAnalytics; kind: "working" | "lo
                          "border-l-2 border-l-ink-2/30";
 
   return (
-    <div className={clsx("panel p-3 sm:p-4 flex flex-wrap items-center gap-x-4 sm:gap-x-6 gap-y-3", borderCls)}>
+    <Link href={`/strategy/${encodeURIComponent(s.id)}`}
+      title={`See all ${dSettled} settled tickets for ${s.id}`}
+      className={clsx("panel p-3 sm:p-4 flex flex-wrap items-center gap-x-4 sm:gap-x-6 gap-y-3 transition-colors hover:border-accent-cyan/50 hover:bg-bg-2/40 cursor-pointer", borderCls)}>
       <div className="flex-1 min-w-[140px]">
         <div className="font-mono text-sm sm:text-base text-ink-0 break-all flex items-center gap-2">
           {s.id}
@@ -444,6 +447,7 @@ function StrategyCard({ s, kind }: { s: StrategyAnalytics; kind: "working" | "lo
               measure-only
             </span>
           )}
+          <span className="text-ink-2/70 text-[11px] font-normal ml-auto shrink-0" aria-hidden>tickets →</span>
         </div>
         <div className="text-[11px] sm:text-xs text-ink-2 mt-0.5">
           {dSettled} settled{s.open > 0 ? ` · ${s.open} open` : ""} · hit{" "}
@@ -561,7 +565,7 @@ function StrategyCard({ s, kind }: { s: StrategyAnalytics; kind: "working" | "lo
         </div>
         <div className="text-[10px] sm:text-[11px] text-ink-2">{measureOnly ? "hypothetical" : "realized"}</div>
       </div>
-    </div>
+    </Link>
   );
 }
 
