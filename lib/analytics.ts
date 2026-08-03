@@ -104,6 +104,12 @@ export interface DailyTotal {
   roi: number | null;
 }
 
+// Same shape as DailyTotal but one row per (day, strategy) — lets the Results
+// calendar scope every cell to a single strategy without a re-fetch.
+export interface DailyTotalByStrategy extends DailyTotal {
+  strategyId: string;
+}
+
 export interface TrackPerformance {
   trackCode: string;
   trackName: string;
@@ -437,6 +443,46 @@ export function dailyTotals(lookbackDays: number, tzOffsetMin?: number | null): 
   const rows = Q_DAILY_TOTALS.all(tz, since) as any[];
   return rows.map(r => ({
     day: r.day,
+    bets: r.bets || 0,
+    settled: r.settled || 0,
+    won: r.won || 0,
+    staked: r.staked || 0,
+    realizedPL: r.realizedPL || 0,
+    hitRate: r.settled > 0 ? (r.won || 0) / r.settled : null,
+    roi: r.settledStaked > 0 ? (r.realizedPL || 0) / r.settledStaked : null,
+  }));
+}
+
+// Same aggregation as Q_DAILY_TOTALS but broken out by strategy so the Results
+// calendar can filter to a single strategy. Summing every strategy's rows for a
+// given day reproduces the all-strategies dailyTotals row exactly (same source
+// tickets, same predicates).
+const Q_DAILY_TOTALS_BY_STRATEGY = db.prepare(`
+  SELECT
+    date(placedAt / 1000 - ? * 60, 'unixepoch') AS day,
+    strategyId,
+    SUM(CASE WHEN status IN ('open','won','lost') THEN 1 ELSE 0 END) AS bets,
+    SUM(CASE WHEN status IN ('won','lost') THEN 1 ELSE 0 END)        AS settled,
+    SUM(CASE WHEN status = 'won'  THEN 1 ELSE 0 END)                 AS won,
+    SUM(CASE WHEN status IN ('open','won','lost') THEN stake ELSE 0 END) AS staked,
+    SUM(CASE WHEN status IN ('won','lost') THEN stake ELSE 0 END)        AS settledStaked,
+    SUM(CASE WHEN status IN ('won','lost') THEN realizedPL ELSE 0 END)   AS realizedPL
+  FROM tickets
+  WHERE strategyId IS NOT NULL
+    AND shadow = 0
+    AND status IN ('open','won','lost')
+    AND placedAt >= ?
+  GROUP BY day, strategyId
+  ORDER BY day ASC, strategyId
+`);
+
+export function dailyTotalsByStrategy(lookbackDays: number, tzOffsetMin?: number | null): DailyTotalByStrategy[] {
+  const tz = tzOffsetMin ?? new Date().getTimezoneOffset();
+  const since = sinceLocalMidnight(lookbackDays, tz);
+  const rows = Q_DAILY_TOTALS_BY_STRATEGY.all(tz, since) as any[];
+  return rows.map(r => ({
+    day: r.day,
+    strategyId: r.strategyId,
     bets: r.bets || 0,
     settled: r.settled || 0,
     won: r.won || 0,

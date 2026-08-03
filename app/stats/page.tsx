@@ -14,8 +14,13 @@ interface DailyTotal {
   roi: number | null;
 }
 
+type DailyTotalByStrategy = DailyTotal & { strategyId: string };
+
 interface StatsResponse {
   dailyTotals: DailyTotal[];
+  // Same daily rows broken out per strategy, so the calendar can scope to one
+  // strategy without a re-fetch.
+  dailyByStrategy: DailyTotalByStrategy[];
   // All-time realized P/L across every settled bet — same number the Tickets
   // page shows, rendered in the header so a month figure can't be misread as
   // contradicting it.
@@ -39,6 +44,7 @@ export default function StatsPage() {
         if (!cancelled) {
           setData({
             dailyTotals: j.dailyTotals ?? [],
+            dailyByStrategy: j.dailyTotalsByStrategy ?? [],
             lifetimePL: j.totals?.realizedPL ?? null,
           });
           setError(null);
@@ -69,6 +75,7 @@ export default function StatsPage() {
 
       <DailyResults
         daily={data.dailyTotals}
+        dailyByStrategy={data.dailyByStrategy}
         lifetimePL={data.lifetimePL}
       />
 
@@ -82,14 +89,40 @@ export default function StatsPage() {
 
 type MonthCell = DailyTotal & { future: boolean };
 
+const ALL_STRATEGIES = "__all__";
+
 function DailyResults({
-  daily, lifetimePL,
+  daily: dailyAll, dailyByStrategy, lifetimePL: lifetimePLAll,
 }: {
   daily: DailyTotal[];
+  dailyByStrategy: DailyTotalByStrategy[];
   lifetimePL: number | null;
 }) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [view, setView] = useState<"calendar" | "graph">("calendar");
+  const [strategy, setStrategy] = useState<string>(ALL_STRATEGIES);
+
+  // Strategies that actually placed a real (non-shadow) bet — the only ones
+  // with calendar data. Sorted so the dropdown is stable across refreshes.
+  const strategyIds = useMemo(() => {
+    const ids = new Set(dailyByStrategy.map(r => r.strategyId));
+    return Array.from(ids).sort();
+  }, [dailyByStrategy]);
+
+  const filtering = strategy !== ALL_STRATEGIES;
+
+  // When a strategy is picked, every downstream number (calendar cells, header
+  // stats, graph, day detail) is derived from just that strategy's daily rows.
+  const daily = useMemo(
+    () => filtering ? dailyByStrategy.filter(r => r.strategyId === strategy) : dailyAll,
+    [filtering, strategy, dailyByStrategy, dailyAll],
+  );
+  // All-time figure follows the same scope: the strategy's realized P/L across
+  // the whole fetched window (366d covers all history) vs. the book total.
+  const lifetimePL = useMemo(
+    () => filtering ? daily.reduce((s, d) => s + d.realizedPL, 0) : lifetimePLAll,
+    [filtering, daily, lifetimePLAll],
+  );
 
   const todayStr = fmtLocalDay(new Date());
   const currentMonth = todayStr.slice(0, 7);
@@ -206,7 +239,25 @@ function DailyResults({
             </>
           )}
         </div>
-        <div className="ml-auto flex items-center gap-1 text-xs">
+        <div className="ml-auto flex items-center gap-2 text-xs">
+          {strategyIds.length > 0 && (
+            <select
+              value={strategy}
+              onChange={e => { setStrategy(e.target.value); setSelectedDay(null); }}
+              title="Scope every cell, the header stats, and the graph to a single strategy."
+              className={clsx(
+                "px-2 py-1 rounded border font-mono bg-bg-1 max-w-[11rem] sm:max-w-none",
+                filtering
+                  ? "border-accent-cyan/50 text-accent-cyan"
+                  : "border-line text-ink-2 hover:text-ink-1",
+              )}
+            >
+              <option value={ALL_STRATEGIES}>all strategies</option>
+              {strategyIds.map(id => (
+                <option key={id} value={id}>{id}</option>
+              ))}
+            </select>
+          )}
           {(["calendar", "graph"] as const).map(v => (
             <button key={v} onClick={() => setView(v)}
               className={clsx("px-2 py-1 rounded border font-mono",
@@ -232,6 +283,7 @@ function DailyResults({
       {view === "calendar" && selected && (
         <DayDetail
           day={selected}
+          strategyFilter={filtering ? strategy : null}
           onClose={() => setSelectedDay(null)}
         />
       )}
@@ -594,20 +646,36 @@ interface DayTicket {
   realizedPL?: number;
 }
 
-function DayDetail({ day, onClose }: { day: DailyTotal; onClose: () => void }) {
-  const [tickets, setTickets] = useState<DayTicket[] | null>(null);
+function DayDetail({ day, strategyFilter, onClose }: {
+  day: DailyTotal;
+  strategyFilter: string | null;
+  onClose: () => void;
+}) {
+  const [allTickets, setAllTickets] = useState<DayTicket[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setTickets(null);
+    setAllTickets(null);
     setErr(null);
     fetch(apiUrl(`/api/stats/day?date=${day.day}&tz=${new Date().getTimezoneOffset()}`))
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
-      .then(j => { if (!cancelled) setTickets(j.tickets); })
+      .then(j => { if (!cancelled) setAllTickets(j.tickets); })
       .catch(e => { if (!cancelled) setErr(e.message || String(e)); });
     return () => { cancelled = true; };
   }, [day.day]);
+
+  // Scope the ticket list to match the calendar cell the user clicked: when a
+  // strategy filter is active, the day's P/L header already reflects only that
+  // strategy, so the rows below must too.
+  const tickets = useMemo(
+    () => allTickets == null
+      ? null
+      : strategyFilter == null
+        ? allTickets
+        : allTickets.filter(t => (t.strategyId ?? "manual") === strategyFilter),
+    [allTickets, strategyFilter],
+  );
 
   const d = parseDayLocal(day.day);
   const label = d.toLocaleDateString(undefined, {

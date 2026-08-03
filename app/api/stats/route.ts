@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { strategyAnalytics, dailyPL, dailyTotals, trackPerformance, totals, consensusTiers, pairConsensus } from "@/lib/analytics";
+import { strategyAnalytics, dailyPL, dailyTotals, dailyTotalsByStrategy, trackPerformance, totals, consensusTiers, pairConsensus } from "@/lib/analytics";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +17,7 @@ export async function GET(req: Request) {
     strategies: strategyAnalytics(),
     dailyPL: dailyPL(lookback, tz),
     dailyTotals: dailyTotals(lookback, tz),
+    dailyTotalsByStrategy: dailyTotalsByStrategy(lookback, tz),
     tracks: trackPerformance(),
     consensusTiers: consensusTiers(),
     pairConsensus: pairConsensus(),
