@@ -27,6 +27,7 @@ import { strategyCalibratedTrueP, validateEVConsistency, evPercentFromTrueP } fr
 import { strategyAppliesToTrack } from "./track-types";
 import { persistClosingSnapshot } from "./runner-snapshots";
 import { PURE_STEAM_ID, detectSteamTriggers } from "./strategies/pure-steam";
+import { sendSteamAlert } from "./discord";
 
 function phaseOf(race: Race, now: number): Race["phase"] {
   const ms = race.postTime - now;
@@ -483,6 +484,10 @@ class Engine {
         );
       }
 
+      // Stage-time odds, captured before the update below overwrites
+      // capturedOdds with the fire price — needed for the steam-alert crush %.
+      const stageOdds = t.capturedOdds;
+
       Tickets.update(t.id, {
         status: "open",
         stake: liveStake,
@@ -504,6 +509,27 @@ class Engine {
         (Math.abs(fireEv - t.capturedEV) > 1 ? ` (staged ${t.capturedEV >= 0 ? "+" : ""}${t.capturedEV.toFixed(1)}%)` : "") +
         ` (${decision.status === "LOCKED" ? "T-15s lock" : "EV peaked"})`,
       );
+
+      // Push steam-confirm fires to Discord — this is the moment the strategy
+      // calls it a bet. Only tvg-steam* opts in (it's the crush-gated variant);
+      // fire-and-forget, no-ops when the webhook secret is unset.
+      if (t.strategyId?.startsWith("tvg-steam")) {
+        sendSteamAlert({
+          strategyId: t.strategyId,
+          trackCode: race.trackCode,
+          raceNumber: race.raceNumber,
+          trackName: race.track,
+          program: selection,
+          horseName: runner.name,
+          fractionalOdds: runner.fractionalOdds,
+          decimalOdds: liveOdds,
+          evPercent: fireEv,
+          crushPct: stageOdds > 1 ? ((stageOdds - liveOdds) / stageOdds) * 100 : 0,
+          stageOdds,
+          reason: calibratedReason ?? t.reason,
+          shadow: forceShadow || undefined,
+        });
+      }
     }
     return { promoted, aborted };
   }
