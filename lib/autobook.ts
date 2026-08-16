@@ -515,7 +515,9 @@ class Engine {
       // fire-and-forget, no-ops when the webhook secret is unset.
       if (t.strategyId?.startsWith("tvg-steam")) {
         sendSteamAlert({
+          kind: "fired",
           strategyId: t.strategyId,
+          raceId: t.raceId,
           trackCode: race.trackCode,
           raceNumber: race.raceNumber,
           trackName: race.track,
@@ -1043,6 +1045,29 @@ class Engine {
       `[${strategy.id}] ${existingStaged ? "RESTAGE" : "STAGE"} ${race.trackCode} R${race.raceNumber} ${evaluation.type} #${selectionKey} ${runner.name} ` +
       `@ ${runner.fractionalOdds} match EV +${evaluation.evPercent.toFixed(1)}% · ${phase} · ${evaluation.reason}`,
     );
+
+    // Surface the opportunity to Discord the moment it's staged — this is the
+    // lead-time alert with a monitor link, so the user can watch the price and
+    // decide whether to fire before the crush gate does. Only tvg-steam* opts
+    // in; a single-runner WIN pick only (exotics carry no crush thesis).
+    if (strategy.id.startsWith("tvg-steam") && !isExoticInRace) {
+      sendSteamAlert({
+        kind: "surfaced",
+        strategyId: strategy.id,
+        raceId: race.id,
+        trackCode: race.trackCode,
+        raceNumber: race.raceNumber,
+        trackName: race.track,
+        program: selectionKey,
+        horseName: runner.name,
+        fractionalOdds: runner.fractionalOdds,
+        decimalOdds: runner.currentOdds,
+        evPercent: evaluation.evPercent,
+        trueP: stageTrueP,
+        reason: evaluation.reason,
+      });
+    }
+
     return existingStaged ? "pivoted" : "staged";
   }
 
