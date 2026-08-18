@@ -10,9 +10,10 @@
 // ./index.ts — add a measure-only strategy and you must add its id here too.
 export const MEASURE_ONLY_STRATEGY_IDS: ReadonlySet<string> = new Set([
   "pure-steam",
-  "tvg-steam-value",
+  // tvg-steam-overbet-guard is a negative control (fires on horses whose value
+  // has evaporated) — it must never book real. The other steam variants and the
+  // late scanners book major edges real (realEVFloor), so they are NOT here.
   "tvg-steam-overbet-guard",
-  "tvg-steam-closing-gate",
 ]);
 
 export function isMeasureOnly(strategyId?: string | null): boolean {

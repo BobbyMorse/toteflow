@@ -417,6 +417,13 @@ class Engine {
           ? evPercentFromTrueP(liveTrueP, liveOdds, fireTakeout)
           : liveEv;
 
+      // Real-EV floor (opt-in via Strategy.realEVFloor): a dual-mode strategy
+      // books real only on MAJOR edges (fire EV at/above the floor); sub-floor
+      // fires still book, but as measured shadow. Folds into the bankroll-dedup
+      // shadow already in forceShadow, so an already-real pick also shadows.
+      const belowRealFloor = originStrategy?.realEVFloor != null && fireEv < originStrategy.realEVFloor;
+      const effectiveShadow = forceShadow || belowRealFloor;
+
       if (isExoticInRace) {
         // Preserve the stake and estimatedPayout that were locked in at stage
         // time — those reflect the strategy's exotic-pool math. capturedOdds
@@ -480,7 +487,7 @@ class Engine {
       }
 
       const baseStake = cfg?.stake ?? t.stake ?? 0;
-      const liveStake = forceShadow ? 0 : baseStake;
+      const liveStake = effectiveShadow ? 0 : baseStake;
 
       // Hard floor: don't fire single-runner bets with negative EV at fire time.
       // This catches cases where odds drifted enough to flip EV negative between
@@ -529,7 +536,7 @@ class Engine {
       Tickets.update(t.id, {
         status: "open",
         stake: liveStake,
-        shadowStake: forceShadow ? baseStake : undefined,
+        shadowStake: effectiveShadow ? baseStake : undefined,
         capturedOdds: liveOdds,
         capturedEV: fireEv,
         stagedEV: t.capturedEV,
@@ -537,12 +544,12 @@ class Engine {
         capturedTrueP: liveTrueP,
         potentialPayout: liveStake * liveOdds,
         placedAt: now,
-        shadow: forceShadow || undefined,
+        shadow: effectiveShadow || undefined,
         ...(calibratedReason ? { reason: calibratedReason } : {}),
       });
       promoted++;
       this.note(
-        `[${t.strategyId ?? "?"}] ${forceShadow ? "SHADOW " : ""}FIRE ${t.raceId} #${selection} ` +
+        `[${t.strategyId ?? "?"}] ${effectiveShadow ? "SHADOW " : ""}FIRE ${t.raceId} #${selection} ` +
         `@ ${runner.fractionalOdds} fire EV ${fireEv >= 0 ? "+" : ""}${fireEv.toFixed(1)}%` +
         (Math.abs(fireEv - t.capturedEV) > 1 ? ` (staged ${t.capturedEV >= 0 ? "+" : ""}${t.capturedEV.toFixed(1)}%)` : "") +
         ` (${decision.status === "LOCKED" ? "T-15s lock" : "EV peaked"})`,
@@ -567,7 +574,7 @@ class Engine {
           crushPct: stageOdds > 1 ? ((stageOdds - liveOdds) / stageOdds) * 100 : 0,
           stageOdds,
           reason: calibratedReason ?? t.reason,
-          shadow: forceShadow || undefined,
+          shadow: effectiveShadow || undefined,
         });
       }
     }

@@ -120,6 +120,15 @@ export interface Strategy {
   // only aborts if it's still failing at the T-15s lock — same hold-then-abort
   // shape as fireCrushBand. Composes with fireCrushBand (both must pass).
   projectedEVMode?: "require-positive" | "require-negative";
+  // Dual-mode real/shadow booking for single-runner WIN strategies. When set,
+  // a fire whose honest fire-time EV is below this floor books as SHADOW (real
+  // stake/P&L 0, tracked in shadowStake/shadowPL) — measured but kept off the
+  // book — while a fire at/above it books for REAL. Lets a promising experiment
+  // actually play its MAJOR edges while still recording the marginal ones. A
+  // strategy with realEVFloor is NOT measureOnly (it can bet real), so it does
+  // not belong in MEASURE_ONLY_STRATEGY_IDS. Enforced in the autobook promote
+  // loop after the fire-time EV is finalized.
+  realEVFloor?: number;
   // Measure-only: the strategy is a live experiment, never a real bet. Its
   // promoted tickets are forced to SHADOW (real stake + realizedPL = 0, the
   // hypothetical outcome tracked in shadowStake/shadowPL) regardless of whether

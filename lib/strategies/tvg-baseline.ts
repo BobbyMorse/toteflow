@@ -136,13 +136,17 @@ function winEVForSelection(
 // #1 — the real hypothesis: steam + value STILL remaining. Same crush band, but
 // only fire when EV re-priced at the projected closing price still clears
 // threshold. This is the guidance's rule: ev = fair_p·(expected_close+1) − 1 > t.
+// Major-edge floor: fires at/above this book REAL, below it book shadow.
+// Matches the late scanners' REAL_EV_FLOOR (lib/strategies/late-scan.ts).
+const MAJOR_EV_FLOOR = 25;
+
 export const tvgSteamValueStrategy: Strategy = {
-  ...build("tvg-steam-value", "TVG Steam + Value (measure)", ["thoroughbred"], calibrateTVGBaselineTrueP),
+  ...build("tvg-steam-value", "TVG Steam + Value", ["thoroughbred"], calibrateTVGBaselineTrueP),
   thesis:
-    "Steam-confirm entry, but fire only when the pick is still +EV at its projected closing price — bet the move only while the horse is still underpriced. Measure-only.",
+    "Steam-confirm entry, but fire only when the pick is still +EV at its projected closing price — bet the move only while the horse is still underpriced. Books major edges real, shadows the rest.",
   fireCrushBand: STEAM_BAND,
   projectedEVMode: "require-positive",
-  measureOnly: true,
+  realEVFloor: MAJOR_EV_FLOOR,
 };
 
 // #2 — the negative control: steam that has already OVERSHOT fair value. Same
@@ -165,13 +169,13 @@ export const tvgSteamOverbetStrategy: Strategy = {
 // into "value survived to the close" vs "didn't", answering whether close-
 // surviving steamers are the ones that actually win.
 export const tvgSteamClosingGateStrategy: Strategy = {
-  ...build("tvg-steam-closing-gate", "TVG Steam + Close EV (measure)", ["thoroughbred"], calibrateTVGBaselineTrueP),
+  ...build("tvg-steam-closing-gate", "TVG Steam + Close EV", ["thoroughbred"], calibrateTVGBaselineTrueP),
   thesis:
-    "Plain steam-confirm, but stamps its own EV re-priced on the closing pool so shadow P&L can be split by whether value survived to the close. Measure-only.",
+    "Plain steam-confirm that books major edges real, then re-prices its own EV on the closing pool — the closing-EV gate reclassifies any real bet whose value didn't survive to the close as shadow. Sub-major fires shadow but still record their closing EV.",
   fireCrushBand: STEAM_BAND,
   gateOnClosingEV: true,
   closingEVFor(race, selections) {
     return winEVForSelection(race, selections, calibrateTVGBaselineTrueP);
   },
-  measureOnly: true,
+  realEVFloor: MAJOR_EV_FLOOR,
 };
