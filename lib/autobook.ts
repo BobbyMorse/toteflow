@@ -28,6 +28,7 @@ import { strategyAppliesToTrack } from "./track-types";
 import { persistClosingSnapshot } from "./runner-snapshots";
 import { persistOddsTrajectory } from "./odds-trajectory";
 import { PURE_STEAM_ID, detectSteamTriggers } from "./strategies/pure-steam";
+import { LATE_SCAN_SPECS, detectLateModelBets, REAL_EV_FLOOR } from "./strategies/late-scan";
 import { sendSteamAlert } from "./discord";
 
 function phaseOf(race: Race, now: number): Race["phase"] {
@@ -203,6 +204,12 @@ class Engine {
     // bet on every horse showing a qualifying late crush — its own path because
     // it fires multiple bets per race and doesn't stage a single pick.
     this.scanSteam(races, now);
+
+    // Late full-field model scanners (measure-only). Re-run the model across the
+    // whole field at the last second and shadow-bet every qualifying runner —
+    // the field-wide counterfactuals to tvg-baseline (model only) and tvg-steam
+    // (model + steam). Same direct-book path as scanSteam.
+    this.scanLateModel(races, now);
 
     // Index live races by id once, then walk every staged ticket and decide
     // whether to promote, abort, or keep holding. This is the core of the
@@ -879,6 +886,82 @@ class Engine {
           `[${PURE_STEAM_ID}] SHADOW BET ${race.trackCode} R${race.raceNumber} #${trig.program} ${trig.name} ` +
           `· late crush ${trig.crushPct.toFixed(0)}% (${trig.refOdds.toFixed(1)}→${trig.odds.toFixed(1)}) · $${cfg.stake.toFixed(2)} shadow`,
         );
+      }
+    }
+  }
+
+  // Late full-field model scanners (measure-only). For each spec, re-run the
+  // model across the whole field in the last-second window and shadow-book every
+  // qualifying runner — the field-wide counterfactuals to the one-pick-per-race
+  // stage strategies (tvg-baseline / tvg-steam). One race can surface several
+  // bets; each gets its own shadow ticket. Direct-book (not stage→promote) for
+  // the same reason as scanSteam: multiple picks per race. See lib/strategies/
+  // late-scan.ts.
+  private scanLateModel(races: Race[], now: number) {
+    if (!AutoBook.globalEnabled()) return;
+    const REBOOK_BLOCK_MS = 4 * 60 * 60_000;
+    for (const spec of LATE_SCAN_SPECS) {
+      const strat = strategies.find(s => s.id === spec.id);
+      const cfg = AutoBook.strategyConfig(spec.id);
+      if (!strat || !cfg?.enabled) continue;
+      // Don't re-book the same (race, horse) for this scanner within the window.
+      const existing = new Set(
+        Tickets.list()
+          .filter(t => t.strategyId === spec.id
+            && (t.status === "open" || t.placedAt > now - REBOOK_BLOCK_MS))
+          .map(t => `${t.raceId}:${t.selections[0]}`),
+      );
+      for (const race of races) {
+        if (!strategyAppliesToTrack(strat.appliesTo, race.trackType)) continue;
+        const bets = detectLateModelBets(race, now, cfg.evThreshold, spec.crushBand);
+        for (const b of bets) {
+          const key = `${race.id}:${b.program}`;
+          if (existing.has(key)) continue;
+          existing.add(key);
+          const crushTag = Number.isNaN(b.crushPct) ? "n/a" : `${b.crushPct.toFixed(0)}%`;
+          // Major edge → real bet, unless the exact pick is already a real bet
+          // (another strategy, or the sibling late scanner earlier this tick):
+          // then shadow it so we don't double-count the position. Sub-major
+          // +EV always shadows — measured, not loaded onto the book.
+          const major = b.ev >= REAL_EV_FLOOR;
+          const bookReal = major && !Tickets.hasRealBet(race.id, "WIN", [b.program]);
+          const stake = bookReal ? cfg.stake : 0;
+          const ticket: Ticket = {
+            id: `auto_${spec.id}_${now}_${Math.random().toString(36).slice(2, 6)}`,
+            raceId: race.id,
+            trackCode: race.trackCode,
+            raceNumber: race.raceNumber,
+            trackName: race.track,
+            horseName: b.name,
+            type: "WIN",
+            selections: [b.program],
+            stake,
+            potentialPayout: bookReal ? stake * b.odds : 0,
+            capturedEV: b.ev,
+            capturedOdds: b.odds,
+            capturedTrueP: b.trueP,
+            // late crush % for model×steam slicing (NaN → 0 for the model-only
+            // scanner; the steam scanner already gated on it).
+            stagedEV: Number.isNaN(b.crushPct) ? 0 : b.crushPct,
+            placedAt: now,
+            postTime: race.postTime,
+            status: "open",
+            mode: "auto",
+            strategyId: spec.id,
+            shadow: bookReal ? undefined : true,
+            shadowStake: bookReal ? undefined : cfg.stake,
+            reason:
+              `Late field scan: #${b.program} ${b.name} model +${b.ev.toFixed(1)}% @ ${b.fractionalOdds} ` +
+              `(P=${(b.trueP * 100).toFixed(1)}%, late crush ${crushTag})` +
+              (bookReal ? ` · MAJOR edge — real bet` : ` · shadow`),
+          };
+          Tickets.add(ticket);
+          this.note(
+            `[${spec.id}] ${bookReal ? "REAL BET" : "SHADOW BET"} ${race.trackCode} R${race.raceNumber} ` +
+            `#${b.program} ${b.name} · model +${b.ev.toFixed(1)}% @ ${b.fractionalOdds} · crush ${crushTag} · ` +
+            `$${(bookReal ? stake : cfg.stake).toFixed(2)}${bookReal ? "" : " shadow"}`,
+          );
+        }
       }
     }
   }

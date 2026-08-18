@@ -22,6 +22,7 @@ import { exactaOverlayPairStrategy } from "./exacta-overlay-pair";
 import { trifectaKeyStrategy } from "./trifecta-key";
 import { ddConsensusStrategy } from "./dd-consensus";
 import { pureSteamStrategy } from "./pure-steam";
+import { lateScanStrategy, lateSteamScanStrategy } from "./late-scan";
 import { variantStrategy } from "./variants";
 import { MEASURE_ONLY_STRATEGY_IDS } from "./measure-only";
 
@@ -72,6 +73,11 @@ export const strategies: Strategy[] = [
   tvgSteamValueStrategy,
   tvgSteamOverbetStrategy,
   tvgSteamClosingGateStrategy,
+  // Late full-field model scanners: re-run the model on the whole field at the
+  // last second, book major +EV real and shadow the rest. Counterfactuals to
+  // the one-pick-per-race stage strategies (see late-scan.ts).
+  lateScanStrategy,
+  lateSteamScanStrategy,
   ...harnessVariants,
   ...quarterHorseVariants,
   ...jumpsVariants,

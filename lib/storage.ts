@@ -61,6 +61,12 @@ const defaultPerStrategy: Record<string, StrategyConfig> = {
   "tvg-steam-value":        { enabled: true, evThreshold: 10, stake: 20, fireAtPhase: "action" },
   "tvg-steam-overbet-guard":{ enabled: true, evThreshold: 10, stake: 20, fireAtPhase: "action" },
   "tvg-steam-closing-gate": { enabled: true, evThreshold: 10, stake: 20, fireAtPhase: "action" },
+  // Late full-field scanners (books via Engine.scanLateModel, not the stage
+  // loop). evThreshold = the MEASURE floor (min EV to track at all); a separate
+  // REAL_EV_FLOOR in late-scan.ts decides which of those get booked for real.
+  // stake 20 to match tvg-baseline/tvg-steam for a like-for-like ROI compare.
+  "tvg-late-scan":          { enabled: true, evThreshold: 10, stake: 20, fireAtPhase: "action" },
+  "tvg-late-steam-scan":    { enabled: true, evThreshold: 10, stake: 20, fireAtPhase: "action" },
   // Pure-steam scanner — measure-only field-wide steam detector (books via
   // Engine.scanSteam, not the stage loop). evThreshold/fireAtPhase are unused
   // (evaluate() returns null); the scanner reads only `enabled` and `stake`.
