@@ -6,6 +6,7 @@ import { Tickets, Closing, AutoBook, deriveClosingEV } from "./storage";
 import { strategies } from "./strategies";
 import { RaceResults } from "./race-results";
 import { stampSnapshotResults, purgeUnstampedSnapshots } from "./runner-snapshots";
+import { stampTrajectoryResults, purgeUnstampedTrajectories } from "./odds-trajectory";
 import type { Ticket } from "./types";
 
 const ENDPOINT = "https://service.tvg.com/graph/v2/query";
@@ -187,11 +188,15 @@ class Grader {
       // skips keys that already exist. Also stamp finish + real payoffs onto
       // the persisted runner snapshots (the calibration training set).
       purgeUnstampedSnapshots();
+      purgeUnstampedTrajectories();
       for (const r of races) {
         const isFinal = ["RO", "MO"].includes(r.status?.code ?? "");
         if (!isFinal) continue;
         const runners = r.results?.runners ?? [];
-        if (runners.length) stampSnapshotResults(`TVG-${r.id}`, runners);
+        if (runners.length) {
+          stampSnapshotResults(`TVG-${r.id}`, runners);
+          stampTrajectoryResults(`TVG-${r.id}`, runners);
+        }
         const finishers = runners
           .filter(rn => rn.finishPosition && rn.finishPosition <= 4)
           .sort((a, b) => (a.finishPosition ?? 99) - (b.finishPosition ?? 99))

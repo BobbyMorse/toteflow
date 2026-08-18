@@ -26,6 +26,7 @@ import { minBaseForWager } from "./wager-minimums";
 import { strategyCalibratedTrueP, validateEVConsistency, evPercentFromTrueP } from "./strategy-calibration";
 import { strategyAppliesToTrack } from "./track-types";
 import { persistClosingSnapshot } from "./runner-snapshots";
+import { persistOddsTrajectory } from "./odds-trajectory";
 import { PURE_STEAM_ID, detectSteamTriggers } from "./strategies/pure-steam";
 import { sendSteamAlert } from "./discord";
 
@@ -318,6 +319,36 @@ class Engine {
           });
           aborted++;
           this.note(`[${t.strategyId}] ABORT ${t.raceId} #${selection} · steam gate: only ${crushPct.toFixed(0)}% crush at lock`);
+          continue;
+        }
+      }
+
+      // Value-at-projected-close gate (opt-in via Strategy.projectedEVMode).
+      // Steam confirms informed money moved the price; this asks whether the
+      // horse is still mispriced at the price we EXPECT to get. Re-price the
+      // strategy's own EV at projectedFinalOdds (the adapter's late-move
+      // extrapolation), then require positive value ("require-positive": the
+      // real hypothesis) or require it to have overshot ("require-negative":
+      // the negative control). Hold below the bar; abort only at the lock.
+      if (originStrategy?.projectedEVMode && !isExoticInRace && runner.truePWin != null) {
+        const projOdds = runner.projectedFinalOdds != null && runner.projectedFinalOdds > 1.2
+          ? runner.projectedFinalOdds
+          : runner.currentOdds;
+        const projMarketP = 1 / Math.max(1.2, projOdds);
+        const projTrueP = strategyCalibratedTrueP(t.strategyId, runner.truePWin, projMarketP);
+        const projTakeout = race.takeout > 0 ? race.takeout : 0.16;
+        const projEV = evPercentFromTrueP(projTrueP, projOdds, projTakeout);
+        const projThreshold = cfg?.evThreshold ?? 0;
+        const wantPositive = originStrategy.projectedEVMode === "require-positive";
+        const pass = wantPositive ? projEV >= projThreshold : projEV < 0;
+        if (!pass) {
+          if (decision.status !== "LOCKED") continue; // projection may still move
+          const why = wantPositive
+            ? `projected-close EV ${projEV.toFixed(1)}% < ${projThreshold}% at lock — value did not survive the move`
+            : `projected-close EV ${projEV.toFixed(1)}% ≥ 0 at lock — still +value, not an overbet`;
+          Tickets.update(t.id, { status: "aborted", abortedAt: now, abortReason: `projected-value gate: ${why}` });
+          aborted++;
+          this.note(`[${t.strategyId}] ABORT ${t.raceId} #${selection} · projected-value gate: ${why}`);
           continue;
         }
       }
@@ -877,6 +908,10 @@ class Engine {
     // Persist the whole field to SQLite (throttled, closing window only) —
     // the calibration training set. See lib/runner-snapshots.ts.
     persistClosingSnapshot(race);
+    // Persist the whole field's pre-off price PATH (same window/throttle) — the
+    // durable trajectory the steam variants get backtested against. See
+    // lib/odds-trajectory.ts.
+    persistOddsTrajectory(race);
 
     // Stamp the closing-EV gate value on any open ticket whose strategy opts in
     // (gateOnClosingEV). We re-price the strategy's OWN thesis for the exact bet

@@ -53,6 +53,14 @@ const defaultPerStrategy: Record<string, StrategyConfig> = {
   // Steam-confirm: tvg-baseline entry + 15-35% crush fire gate (see
   // lib/strategies/tvg-baseline.ts for the cohort audit behind the band).
   "tvg-steam":      { enabled: true,  evThreshold: 10, stake: 20, fireAtPhase: "action" },
+  // Steam variants (measure-only shadows, stake 20 to match tvg-steam for a
+  // like-for-like ROI compare). tvg-steam-value fires only when the pick is
+  // still +EV at its projected close (evThreshold is that bar); overbet-guard is
+  // its negative control (fires when projected-close EV < 0); closing-gate is
+  // plain steam that stamps its closing EV so shadow P&L splits by survival.
+  "tvg-steam-value":        { enabled: true, evThreshold: 10, stake: 20, fireAtPhase: "action" },
+  "tvg-steam-overbet-guard":{ enabled: true, evThreshold: 10, stake: 20, fireAtPhase: "action" },
+  "tvg-steam-closing-gate": { enabled: true, evThreshold: 10, stake: 20, fireAtPhase: "action" },
   // Pure-steam scanner — measure-only field-wide steam detector (books via
   // Engine.scanSteam, not the stage loop). evThreshold/fireAtPhase are unused
   // (evaluate() returns null); the scanner reads only `enabled` and `stake`.

@@ -107,3 +107,71 @@ export const tvgSteamHarnessStrategy: Strategy = {
   thesis: STEAM_THESIS,
   fireCrushBand: STEAM_BAND,
 };
+
+// -------- Steam variants (all measure-only) --------
+// tvg-steam fires on crush MAGNITUDE alone (15-35% band) and never checks
+// whether the pick is still underpriced after the move. These three isolate
+// that gap. They run as measure-only shadows so they accumulate a fully-graded
+// track record beside the live book without splitting real stake or colliding
+// with tvg-steam's real bets on the same picks (bankroll dedup would shadow one
+// of them anyway). Promote a winner to real money by flipping measureOnly off.
+
+// WIN closing/projected EV for an already-selected pick, priced against a given
+// pool at the SAME model weight the bet fired on. Used by the closing-EV gate
+// (against the closing pool) — routed through the strategy so discipline
+// variants reprice consistently. Returns null when the pick can't be priced.
+function winEVForSelection(
+  race: Parameters<Strategy["evaluate"]>[0],
+  selections: readonly string[],
+  calibrate: TrueP,
+): number | null {
+  const prog = selections[0];
+  const r = race.runners.find(x => x.program === prog);
+  if (!r || r.scratched || r.truePWin == null || r.currentOdds < 1.2) return null;
+  const takeout = race.takeout > 0 ? race.takeout : FALLBACK_TAKEOUT;
+  const marketP = 1 / Math.max(1.2, r.currentOdds);
+  return evPercentFromTrueP(calibrate(r.truePWin, marketP), r.currentOdds, takeout);
+}
+
+// #1 — the real hypothesis: steam + value STILL remaining. Same crush band, but
+// only fire when EV re-priced at the projected closing price still clears
+// threshold. This is the guidance's rule: ev = fair_p·(expected_close+1) − 1 > t.
+export const tvgSteamValueStrategy: Strategy = {
+  ...build("tvg-steam-value", "TVG Steam + Value (measure)", ["thoroughbred"], calibrateTVGBaselineTrueP),
+  thesis:
+    "Steam-confirm entry, but fire only when the pick is still +EV at its projected closing price — bet the move only while the horse is still underpriced. Measure-only.",
+  fireCrushBand: STEAM_BAND,
+  projectedEVMode: "require-positive",
+  measureOnly: true,
+};
+
+// #2 — the negative control: steam that has already OVERSHOT fair value. Same
+// crush band, fires only when projected-close EV has gone negative. If #1 pays
+// and this bleeds, the edge is value-survival, not the move itself.
+export const tvgSteamOverbetStrategy: Strategy = {
+  ...build("tvg-steam-overbet-guard", "TVG Steam Overbet (control)", ["thoroughbred"], calibrateTVGBaselineTrueP),
+  thesis:
+    "Negative control: steam-confirm entry that fires only when the price has overshot fair value (projected-close EV < 0). Expected to lose — isolates whether the payoff is value-survival or just the move. Measure-only.",
+  fireCrushBand: STEAM_BAND,
+  projectedEVMode: "require-negative",
+  measureOnly: true,
+};
+
+// #3 — plain steam, self-grading on the CLOSE. Fires exactly like tvg-steam, but
+// opts into closing-EV stamping: the snapshotter re-prices this exact pick on
+// the closing pool and stores it as closingStrategyEV on the (shadow) ticket.
+// Since it's measure-only every fire is already shadow, so the grader doesn't
+// reclassify — instead the stamped closing EV lets analysis split its shadow P&L
+// into "value survived to the close" vs "didn't", answering whether close-
+// surviving steamers are the ones that actually win.
+export const tvgSteamClosingGateStrategy: Strategy = {
+  ...build("tvg-steam-closing-gate", "TVG Steam + Close EV (measure)", ["thoroughbred"], calibrateTVGBaselineTrueP),
+  thesis:
+    "Plain steam-confirm, but stamps its own EV re-priced on the closing pool so shadow P&L can be split by whether value survived to the close. Measure-only.",
+  fireCrushBand: STEAM_BAND,
+  gateOnClosingEV: true,
+  closingEVFor(race, selections) {
+    return winEVForSelection(race, selections, calibrateTVGBaselineTrueP);
+  },
+  measureOnly: true,
+};

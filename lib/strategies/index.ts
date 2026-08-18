@@ -6,6 +6,9 @@ import {
   tvgBaselineJumpsStrategy,
   tvgSteamStrategy,
   tvgSteamHarnessStrategy,
+  tvgSteamValueStrategy,
+  tvgSteamOverbetStrategy,
+  tvgSteamClosingGateStrategy,
 } from "./tvg-baseline";
 import { favFadeStrategy } from "./fav-fade";
 import { loneSpeedStrategy } from "./lone-speed";
@@ -62,8 +65,13 @@ export const strategies: Strategy[] = [
   tvgBaselineJumpsStrategy,
   tvgSteamStrategy,
   tvgSteamHarnessStrategy,
-  // Measure-only control — not variant-expanded; one thoroughbred experiment.
+  // Measure-only experiments — not variant-expanded; thoroughbred only. The
+  // steam variants isolate whether value-still-remaining (not the move alone)
+  // is the edge (see tvg-baseline.ts).
   pureSteamStrategy,
+  tvgSteamValueStrategy,
+  tvgSteamOverbetStrategy,
+  tvgSteamClosingGateStrategy,
   ...harnessVariants,
   ...quarterHorseVariants,
   ...jumpsVariants,

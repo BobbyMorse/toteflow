@@ -105,6 +105,21 @@ export interface Strategy {
   // market has partially confirmed the model's pick), not a re-pricing of
   // every strategy's EV by a historical crush factor.
   fireCrushBand?: readonly [number, number];
+  // Value-at-projected-close fire gate for single-runner WIN strategies. The
+  // steam thesis is "informed money moved the price" — but a move only pays if
+  // the horse is STILL underpriced after it. This gate re-prices the strategy's
+  // own EV at the runner's projectedFinalOdds (the adapter's late-move
+  // extrapolation — see lib/adapters/tvg.ts) rather than current odds, and
+  // decides on the expected price we'll actually receive:
+  //   "require-positive" → fire only if projected-close EV ≥ configured
+  //     evThreshold (steam that still leaves value: the real hypothesis).
+  //   "require-negative" → fire only if projected-close EV < 0 (steam that has
+  //     already overshot fair value: the negative control — we expect it to
+  //     lose, which confirms the edge is value-survival, not the move itself).
+  // Below the bar the ticket keeps waiting (the projection may still move) and
+  // only aborts if it's still failing at the T-15s lock — same hold-then-abort
+  // shape as fireCrushBand. Composes with fireCrushBand (both must pass).
+  projectedEVMode?: "require-positive" | "require-negative";
   // Measure-only: the strategy is a live experiment, never a real bet. Its
   // promoted tickets are forced to SHADOW (real stake + realizedPL = 0, the
   // hypothetical outcome tracked in shadowStake/shadowPL) regardless of whether

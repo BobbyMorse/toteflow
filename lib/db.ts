@@ -169,6 +169,38 @@ function applySchema(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_snaps_captured ON runner_snapshots(capturedAt);
     CREATE INDEX IF NOT EXISTS idx_snaps_settled  ON runner_snapshots(settledAt);
+
+    -- Per-runner pre-off odds TRAJECTORY (the full price path into post), one
+    -- row per (raceId, day, program), upserted through the closing window so the
+    -- final write carries the fullest recent path; the grader stamps the result.
+    -- Companion to runner_snapshots (single closing row) — this keeps the ordered
+    -- {t, odds} points so steam variants can be backtested on movement, not just
+    -- a single crush number. See lib/odds-trajectory.ts.
+    CREATE TABLE IF NOT EXISTS odds_trajectory (
+      raceId         TEXT NOT NULL,
+      day            TEXT NOT NULL,
+      program        TEXT NOT NULL,
+      trackCode      TEXT,
+      raceNumber     INTEGER,
+      trackType      TEXT,
+      modelQuality   TEXT,
+      fieldSize      INTEGER,
+      postTime       INTEGER,
+      capturedAt     INTEGER NOT NULL,
+      truePWin       REAL,
+      openOdds       REAL,
+      closeOdds      REAL,
+      pointCount     INTEGER,
+      trajectory     TEXT NOT NULL,
+      finishPosition INTEGER,
+      winPayoff      REAL,
+      placePayoff    REAL,
+      showPayoff     REAL,
+      settledAt      INTEGER,
+      PRIMARY KEY (raceId, day, program)
+    );
+    CREATE INDEX IF NOT EXISTS idx_traj_captured ON odds_trajectory(capturedAt);
+    CREATE INDEX IF NOT EXISTS idx_traj_settled  ON odds_trajectory(settledAt);
   `);
 
   // Idempotent column adds for tables that pre-date a column.

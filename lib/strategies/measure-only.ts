@@ -10,6 +10,9 @@
 // ./index.ts — add a measure-only strategy and you must add its id here too.
 export const MEASURE_ONLY_STRATEGY_IDS: ReadonlySet<string> = new Set([
   "pure-steam",
+  "tvg-steam-value",
+  "tvg-steam-overbet-guard",
+  "tvg-steam-closing-gate",
 ]);
 
 export function isMeasureOnly(strategyId?: string | null): boolean {
