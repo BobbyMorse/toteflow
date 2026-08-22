@@ -556,9 +556,11 @@ class Engine {
       );
 
       // Push steam-confirm fires to Discord — this is the moment the strategy
-      // calls it a bet. Only tvg-steam* opts in (it's the crush-gated variant);
-      // fire-and-forget, no-ops when the webhook secret is unset.
-      if (t.strategyId?.startsWith("tvg-steam")) {
+      // calls it a bet. Only the canonical tvg-steam opts in; the variants are
+      // measurement controls and alerting on them just spams the channel with
+      // duplicate fires of the same pick. Fire-and-forget, no-ops when the
+      // webhook secret is unset.
+      if (t.strategyId === "tvg-steam") {
         sendSteamAlert({
           kind: "fired",
           strategyId: t.strategyId,
@@ -1173,9 +1175,12 @@ class Engine {
 
     // Surface the opportunity to Discord the moment it's staged — this is the
     // lead-time alert with a monitor link, so the user can watch the price and
-    // decide whether to fire before the crush gate does. Only tvg-steam* opts
-    // in; a single-runner WIN pick only (exotics carry no crush thesis).
-    if (strategy.id.startsWith("tvg-steam") && !isExoticInRace) {
+    // decide whether to fire before the crush gate does. Only the canonical
+    // tvg-steam fires alerts — the -value/-closing-gate/-overbet-guard variants
+    // stage the same picks but are measurement controls, so alerting on them
+    // just quadruples the channel noise. A single-runner WIN pick only (exotics
+    // carry no crush thesis).
+    if (strategy.id === "tvg-steam" && !isExoticInRace) {
       sendSteamAlert({
         kind: "surfaced",
         strategyId: strategy.id,

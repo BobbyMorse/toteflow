@@ -51,34 +51,8 @@ function monitorUrl(raceId: string): string {
   return `${PUBLIC_URL}/race/${encodeURIComponent(raceId)}`;
 }
 
-// Cross-variant dedup. The tvg-steam family runs four strategies in parallel
-// (tvg-steam plus -value / -closing-gate / -overbet-guard controls) that stage
-// and fire on essentially the same picks — so without this each opportunity
-// pinged Discord up to four times. The channel is a human feed that only needs
-// one alert per pick per event; the per-strategy breakdown lives on the site.
-// Key on (kind, raceId, program) — NOT strategyId — so the first variant to
-// surface/fire a pick alerts and the rest no-op. Different `kind` (surfaced vs
-// fired) keeps its own slot, so a pick still gets both the lead-time and the
-// confirmation ping. raceId is trackCode-raceNumber (unique within a day), so a
-// few-hours TTL covers a race's stage→fire lifecycle without suppressing the
-// same id on a later day.
-const DEDUP_TTL_MS = 6 * 60 * 60 * 1000;
-const recentAlerts = new Map<string, number>();
-
-function shouldSuppress(a: SteamAlert, nowMs: number): boolean {
-  // Prune expired keys so the map can't grow unbounded in a long-lived process.
-  for (const [k, expiry] of recentAlerts) {
-    if (expiry <= nowMs) recentAlerts.delete(k);
-  }
-  const key = `${a.kind}:${a.raceId}:${a.program}`;
-  if (recentAlerts.has(key)) return true;
-  recentAlerts.set(key, nowMs + DEDUP_TTL_MS);
-  return false;
-}
-
 export function sendSteamAlert(a: SteamAlert): void {
   if (!WEBHOOK_URL) return;
-  if (shouldSuppress(a, Date.now())) return;
 
   const evStr = `${a.evPercent >= 0 ? "+" : ""}${a.evPercent.toFixed(1)}%`;
   const url = monitorUrl(a.raceId);
