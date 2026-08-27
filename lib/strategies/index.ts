@@ -9,6 +9,8 @@ import {
   tvgSteamValueStrategy,
   tvgSteamOverbetStrategy,
   tvgSteamClosingGateStrategy,
+  tvgSteamLongshotStrategy,
+  tvgSteamLongshotStrictStrategy,
 } from "./tvg-baseline";
 import { favFadeStrategy } from "./fav-fade";
 import { loneSpeedStrategy } from "./lone-speed";
@@ -73,6 +75,11 @@ export const strategies: Strategy[] = [
   tvgSteamValueStrategy,
   tvgSteamOverbetStrategy,
   tvgSteamClosingGateStrategy,
+  // Longshot steam variants — plain steam with a short-price floor (drop
+  // favorites, where the crushed price leaves no payout). Measure-only shadows;
+  // see the 2026-08 deep-dive note in tvg-baseline.ts.
+  tvgSteamLongshotStrategy,
+  tvgSteamLongshotStrictStrategy,
   // Late full-field model scanners: re-run the model on the whole field at the
   // last second, book major +EV real and shadow the rest. Counterfactuals to
   // the one-pick-per-race stage strategies (see late-scan.ts).

@@ -120,6 +120,20 @@ export interface Strategy {
   // only aborts if it's still failing at the T-15s lock — same hold-then-abort
   // shape as fireCrushBand. Composes with fireCrushBand (both must pass).
   projectedEVMode?: "require-positive" | "require-negative";
+  // Longshot-only fire gate for single-runner WIN strategies. Drops short-priced
+  // picks that carry no payout once they've crushed into the steam band:
+  //   minFireOdds → abort if the fire-time (post-crush) decimal price is below
+  //     this floor (a favorite by market price).
+  //   maxModelP   → abort if the strategy's calibrated model probability at fire
+  //     exceeds this ceiling (a favorite by the model, even if mid-priced).
+  // Both are pass-to-fire (must clear to book). Composes with fireCrushBand and
+  // is checked AFTER it, so it only ever sees confirmed-crush picks — the
+  // crushed price won't drift back out, so it aborts immediately rather than
+  // holding. Basis: the tvg-steam deep-dive (2026-08) — the steam edge
+  // concentrates in longshots while favorites (fire-odds <4 / model P >0.25) are
+  // a persistent drag across periods.
+  minFireOdds?: number;
+  maxModelP?: number;
   // Dual-mode real/shadow booking for single-runner WIN strategies. When set,
   // a fire whose honest fire-time EV is below this floor books as SHADOW (real
   // stake/P&L 0, tracked in shadowStake/shadowPL) — measured but kept off the

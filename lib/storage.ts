@@ -53,14 +53,24 @@ const defaultPerStrategy: Record<string, StrategyConfig> = {
   // Steam-confirm: tvg-baseline entry + 15-35% crush fire gate (see
   // lib/strategies/tvg-baseline.ts for the cohort audit behind the band).
   "tvg-steam":      { enabled: true,  evThreshold: 10, stake: 20, fireAtPhase: "action" },
-  // Steam variants (measure-only shadows, stake 20 to match tvg-steam for a
-  // like-for-like ROI compare). tvg-steam-value fires only when the pick is
-  // still +EV at its projected close (evThreshold is that bar); overbet-guard is
-  // its negative control (fires when projected-close EV < 0); closing-gate is
-  // plain steam that stamps its closing EV so shadow P&L splits by survival.
-  "tvg-steam-value":        { enabled: true, evThreshold: 10, stake: 20, fireAtPhase: "action" },
-  "tvg-steam-overbet-guard":{ enabled: true, evThreshold: 10, stake: 20, fireAtPhase: "action" },
-  "tvg-steam-closing-gate": { enabled: true, evThreshold: 10, stake: 20, fireAtPhase: "action" },
+  // tvg-steam-harness: harness steam ran -81% ROI (significant, real money) in
+  // the 2026-08 deep-dive — retired. Explicit entry so it doesn't inherit
+  // tvg-steam's enabled default via the variant-suffix fallback.
+  "tvg-steam-harness": { enabled: false, evThreshold: 10, stake: 20, fireAtPhase: "action" },
+  // Steam value/overbet/closing-gate variants — RETIRED (disabled). They were
+  // built to test whether value-survival-to-the-close (not the move alone) is
+  // the edge; the 2026-08 deep-dive answered no (value +0.6% vs plain steam
+  // +7.2%, overbet-guard never fired). Kept registered so historical tickets
+  // stay attributable; disabled so they no longer fire. See project memory.
+  "tvg-steam-value":        { enabled: false, evThreshold: 10, stake: 20, fireAtPhase: "action" },
+  "tvg-steam-overbet-guard":{ enabled: false, evThreshold: 10, stake: 20, fireAtPhase: "action" },
+  "tvg-steam-closing-gate": { enabled: false, evThreshold: 10, stake: 20, fireAtPhase: "action" },
+  // Longshot steam variants (measure-only shadows, stake 20 for a like-for-like
+  // ROI compare against tvg-steam). Plain steam with a short-price floor: drop
+  // favorites where the post-crush price leaves no payout. -longshot drops
+  // fire-odds <4 AND model P >0.25; -longshot-strict keeps only fire-odds ≥9.
+  "tvg-steam-longshot":        { enabled: true, evThreshold: 10, stake: 20, fireAtPhase: "action" },
+  "tvg-steam-longshot-strict": { enabled: true, evThreshold: 10, stake: 20, fireAtPhase: "action" },
   // Late full-field scanners (books via Engine.scanLateModel, not the stage
   // loop). evThreshold = the MEASURE floor (min EV to track at all); a separate
   // REAL_EV_FLOOR in late-scan.ts decides which of those get booked for real.
@@ -324,6 +334,26 @@ function hydrate(): Store {
         if (id !== "dr-z-place" && !id.startsWith("dr-z-place-")) continue;
         if (configs[id].evThreshold >= 14) continue;
         configs[id].evThreshold = 14;
+        stmtUpsertStrategyConfig.run(configToRow(id, configs[id]));
+      }
+      stmtSetMeta.run(key, "done");
+    }
+  }
+
+  // One-time retirement of the steam strategies the 2026-08 deep-dive killed:
+  // harness steam (-81% ROI, significant real-money loss) and the
+  // value/overbet-guard/closing-gate variants (value-survival disproven as the
+  // edge). Deployed DBs already hold enabled=1 rows for these, and the
+  // fill-from-defaults loop only touches MISSING rows — so, like the dr-z
+  // migration above, force them off once. Meta-keyed so a later manual re-enable
+  // sticks.
+  {
+    const key = "migration:retire-steam-variants-v1";
+    if (!(stmtGetMeta.get(key) as { value: string } | undefined)?.value) {
+      const retire = ["tvg-steam-harness", "tvg-steam-value", "tvg-steam-overbet-guard", "tvg-steam-closing-gate"];
+      for (const id of retire) {
+        if (!configs[id] || !configs[id].enabled) continue;
+        configs[id].enabled = false;
         stmtUpsertStrategyConfig.run(configToRow(id, configs[id]));
       }
       stmtSetMeta.run(key, "done");

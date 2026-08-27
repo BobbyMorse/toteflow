@@ -14,6 +14,10 @@ export const MEASURE_ONLY_STRATEGY_IDS: ReadonlySet<string> = new Set([
   // has evaporated) — it must never book real. The other steam variants and the
   // late scanners book major edges real (realEVFloor), so they are NOT here.
   "tvg-steam-overbet-guard",
+  // Longshot steam variants — subsets of tvg-steam picks, run as pure parallel
+  // measurement (they'd bankroll-dedup to shadow anyway). See tvg-baseline.ts.
+  "tvg-steam-longshot",
+  "tvg-steam-longshot-strict",
 ]);
 
 export function isMeasureOnly(strategyId?: string | null): boolean {

@@ -330,6 +330,32 @@ class Engine {
         }
       }
 
+      // Longshot-only fire gate (opt-in via Strategy.minFireOdds / maxModelP).
+      // Short-priced picks carry no payout after a 15-35% crush — the steam edge
+      // concentrates in longshots (tvg-steam deep-dive, 2026-08). Checked after
+      // the crush gate, so it only sees confirmed-crush picks. Hold-then-abort
+      // like the crush/projected-EV gates: below the floor the price may still
+      // drift out, so keep waiting and only abort if still short at the lock.
+      if ((originStrategy?.minFireOdds != null || originStrategy?.maxModelP != null)
+          && !isExoticInRace) {
+        const fireOdds = runner.currentOdds;
+        const modelP = (originStrategy.maxModelP != null && runner.truePWin != null)
+          ? strategyCalibratedTrueP(t.strategyId, runner.truePWin, 1 / Math.max(1.2, fireOdds))
+          : null;
+        const belowOddsFloor = originStrategy.minFireOdds != null && fireOdds < originStrategy.minFireOdds;
+        const aboveModelCeil = modelP != null && modelP > originStrategy.maxModelP!;
+        if (belowOddsFloor || aboveModelCeil) {
+          if (decision.status !== "LOCKED") continue; // price/model may still move out
+          const why = belowOddsFloor
+            ? `fire odds ${fireOdds.toFixed(1)} < ${originStrategy.minFireOdds} floor — short price, no payout after crush`
+            : `model P ${(modelP! * 100).toFixed(1)}% > ${(originStrategy.maxModelP! * 100).toFixed(0)}% ceiling — model-favorite`;
+          Tickets.update(t.id, { status: "aborted", abortedAt: now, abortReason: `longshot gate: ${why}` });
+          aborted++;
+          this.note(`[${t.strategyId}] ABORT ${t.raceId} #${selection} · longshot gate: ${why}`);
+          continue;
+        }
+      }
+
       // Value-at-projected-close gate (opt-in via Strategy.projectedEVMode).
       // Steam confirms informed money moved the price; this asks whether the
       // horse is still mispriced at the price we EXPECT to get. Re-price the

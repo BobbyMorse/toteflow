@@ -179,3 +179,37 @@ export const tvgSteamClosingGateStrategy: Strategy = {
   },
   realEVFloor: MAJOR_EV_FLOOR,
 };
+
+// -------- Longshot steam variants (2026-08 deep-dive) --------
+// The tvg-steam edge is real (the crush gate flips tvg-baseline's significant
+// loss to marginally positive) but decayed to ~breakeven by Aug 2026, and what
+// remains concentrates in longshots: fire-odds ≥9 ran +20% ROI while favorites
+// (fire-odds <4 / model P >0.25) lost and the 6-9 band was a persistent drag.
+// These two re-run plain steam with a short-price floor to test whether cutting
+// the drag lifts ROI out of breakeven. Measure-only shadows — every fire is a
+// subset of a tvg-steam pick, so they'd bankroll-dedup to shadow anyway; running
+// them measure-only keeps a clean parallel record. Promote by flipping
+// measureOnly off (and, to make it real, narrowing tvg-steam itself to match).
+
+// Moderate: drop favorites by BOTH market price and model probability — the
+// mechanistically clean cut (a favorite that crushed 15-35% has no payout left).
+export const tvgSteamLongshotStrategy: Strategy = {
+  ...build("tvg-steam-longshot", "TVG Steam Longshot", ["thoroughbred"], calibrateTVGBaselineTrueP),
+  thesis:
+    "Steam-confirm entry, but skip short-priced picks: fire only when the post-crush price is ≥4.0 and the model's probability is ≤25%. A favorite that crushed into the band has no payout left. Measure-only.",
+  fireCrushBand: STEAM_BAND,
+  minFireOdds: 4.0,
+  maxModelP: 0.25,
+  measureOnly: true,
+};
+
+// Strict: longshots only (fire odds ≥9) — the empirical peak of the odds slice.
+// Higher variance; isolates whether the tail is where the money actually is.
+export const tvgSteamLongshotStrictStrategy: Strategy = {
+  ...build("tvg-steam-longshot-strict", "TVG Steam Longshot (strict)", ["thoroughbred"], calibrateTVGBaselineTrueP),
+  thesis:
+    "Steam-confirm entry restricted to longshots — fire only when the post-crush price is ≥9.0. The peak of the odds slice in the 2026-08 deep-dive; higher variance. Measure-only.",
+  fireCrushBand: STEAM_BAND,
+  minFireOdds: 9.0,
+  measureOnly: true,
+};
