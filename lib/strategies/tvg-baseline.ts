@@ -223,10 +223,32 @@ export const tvgSteamLongshotStrictStrategy: Strategy = {
 // outcome variable), so this gates its at-ENTRY proxy: require the model's honest
 // EV at the crushed fire price to still be non-negative. Measure-only; promote by
 // flipping measureOnly off. If it holds, fold the floor straight into tvg-steam.
+// Two thresholds of the same fire-EV signal (2026-09 floor sweep, time-split):
+// the edge snaps on at -5 (ROI jumps +14%→+47%, holds out-of-sample) and is
+// still strong at 0; below -5 it dilutes back to breakeven and fails OOS.
+//   -continuation (floor -5): higher volume (~2x), the loose "value largely
+//     survived / likely to keep crushing" gate. Full +47% / held-out +55%.
+//   -evfloor (floor 0): stricter, lower volume, the "model still positively
+//     likes it at the fire price" gate. Full +54% / held-out +41%.
+// Both measure-only; promote the winner and fold its floor into tvg-steam.
+
+// Higher-volume continuation gate: fire unless the crush overshot fair value by
+// more than ~5% (fireEv >= -5). Note continuation itself (fire→close) is a
+// post-outcome variable and can't be gated directly — this is its at-entry proxy.
+export const tvgSteamContinuationStrategy: Strategy = {
+  ...build("tvg-steam-continuation", "TVG Steam Continuation", ["thoroughbred"], calibrateTVGBaselineTrueP),
+  thesis:
+    "Steam-confirm entry, dropping only the fires where the crush overshot fair value badly (model EV at the fire price below -5%). The higher-volume value-survival gate — keeps the picks likely to keep crushing into the close. Measure-only.",
+  fireCrushBand: STEAM_BAND,
+  minFireEV: -5,
+  measureOnly: true,
+};
+
+// Stricter: model still positively likes the pick at the crushed fire price.
 export const tvgSteamEVFloorStrategy: Strategy = {
   ...build("tvg-steam-evfloor", "TVG Steam Value-Survived", ["thoroughbred"], calibrateTVGBaselineTrueP),
   thesis:
-    "Steam-confirm entry, but fire only when the model's own EV at the crushed fire price is still ≥0 — i.e. the value survived the move. The at-entry proxy for continuation: informed money keeps coming when the pick was genuinely underpriced at our number. Measure-only.",
+    "Steam-confirm entry, but fire only when the model's own EV at the crushed fire price is still ≥0 — i.e. the value fully survived the move. Lower volume, higher conviction: the model still likes the pick at the price we're getting. Measure-only.",
   fireCrushBand: STEAM_BAND,
   minFireEV: 0,
   measureOnly: true,
