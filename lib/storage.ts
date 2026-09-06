@@ -71,6 +71,10 @@ const defaultPerStrategy: Record<string, StrategyConfig> = {
   // fire-odds <4 AND model P >0.25; -longshot-strict keeps only fire-odds ≥9.
   "tvg-steam-longshot":        { enabled: true, evThreshold: 10, stake: 20, fireAtPhase: "action" },
   "tvg-steam-longshot-strict": { enabled: true, evThreshold: 10, stake: 20, fireAtPhase: "action" },
+  // Value-survived gate: same stage entry, fires only when the model's honest EV
+  // at the crushed fire price is still ≥0 (minFireEV). The at-entry proxy for
+  // continuation — see the 2026-09 note in tvg-baseline.ts.
+  "tvg-steam-evfloor":         { enabled: true, evThreshold: 10, stake: 20, fireAtPhase: "action" },
   // Late full-field scanners (books via Engine.scanLateModel, not the stage
   // loop). evThreshold = the MEASURE floor (min EV to track at all); a separate
   // REAL_EV_FLOOR in late-scan.ts decides which of those get booked for real.

@@ -134,6 +134,20 @@ export interface Strategy {
   // a persistent drag across periods.
   minFireOdds?: number;
   maxModelP?: number;
+  // Fire-time EV floor for single-runner WIN strategies. Gates on the HONEST
+  // recomputed fire-time EV (priced at the crushed fire odds), aborting when the
+  // model's own edge did not survive the move — the at-entry proxy for
+  // "continuation" (informed money keeps coming → the pick was genuinely
+  // undervalued at our price → it wins). Distinct from the generic EV_FIRE_FLOOR
+  // in autobook, which gates on the stale-staged liveEv (it falls back to the
+  // positive staged EV when fire-time re-eval returns null, so it never catches
+  // a crush that pushed EV negative — the reason the median steam fire lands at
+  // ~-12% EV). Also distinct from the removed WIN drift gate (a 0.6x odds
+  // haircut that blocked a +ROI cohort): this is the strategy's real live EV at
+  // real fire odds, opt-in only. Hold-then-abort at the T-15s lock like the
+  // crush gate. Basis: 2026-09 analysis — tvg-steam fire-EV>0 ran +53.8% ROI
+  // (79% continuation) vs -0.9% for fire-EV<=0 (68%).
+  minFireEV?: number;
   // Dual-mode real/shadow booking for single-runner WIN strategies. When set,
   // a fire whose honest fire-time EV is below this floor books as SHADOW (real
   // stake/P&L 0, tracked in shadowStake/shadowPL) — measured but kept off the

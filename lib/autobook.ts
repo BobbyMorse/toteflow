@@ -450,6 +450,26 @@ class Engine {
       const belowRealFloor = originStrategy?.realEVFloor != null && fireEv < originStrategy.realEVFloor;
       const effectiveShadow = forceShadow || belowRealFloor;
 
+      // Fire-time EV floor (opt-in via Strategy.minFireEV): gate on the HONEST
+      // recomputed fire EV (fireEv, priced at the crushed fire odds), not the
+      // stale-staged liveEv the generic EV_FIRE_FLOOR below falls back to. For
+      // steam strategies the 15-35% crush routinely pushes the model's own EV
+      // negative by fire (median -12%); the value-survived subset (fireEv >=
+      // floor) is where the continuation/win signal concentrates — informed
+      // money keeps coming, the pick was genuinely underpriced at our number.
+      // Hold below the bar (value may recover as odds move); abort only at lock.
+      if (originStrategy?.minFireEV != null && !isExoticInRace && fireEv < originStrategy.minFireEV) {
+        if (decision.status !== "LOCKED") continue; // value may still recover before lock
+        Tickets.update(t.id, {
+          status: "aborted",
+          abortedAt: now,
+          abortReason: `fire-EV floor: value did not survive the crush (${fireEv.toFixed(1)}% < ${originStrategy.minFireEV}% at fire)`,
+        });
+        aborted++;
+        this.note(`[${t.strategyId}] ABORT ${t.raceId} #${selection} · fire-EV floor: ${fireEv.toFixed(1)}% < ${originStrategy.minFireEV}%`);
+        continue;
+      }
+
       if (isExoticInRace) {
         // Preserve the stake and estimatedPayout that were locked in at stage
         // time — those reflect the strategy's exotic-pool math. capturedOdds

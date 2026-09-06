@@ -11,6 +11,7 @@ import {
   tvgSteamClosingGateStrategy,
   tvgSteamLongshotStrategy,
   tvgSteamLongshotStrictStrategy,
+  tvgSteamEVFloorStrategy,
 } from "./tvg-baseline";
 import { favFadeStrategy } from "./fav-fade";
 import { loneSpeedStrategy } from "./lone-speed";
@@ -80,6 +81,9 @@ export const strategies: Strategy[] = [
   // see the 2026-08 deep-dive note in tvg-baseline.ts.
   tvgSteamLongshotStrategy,
   tvgSteamLongshotStrictStrategy,
+  // Value-survived / continuation gate — steam that only fires when the model's
+  // EV at the crushed fire price is still ≥0 (see 2026-09 note in tvg-baseline.ts).
+  tvgSteamEVFloorStrategy,
   // Late full-field model scanners: re-run the model on the whole field at the
   // last second, book major +EV real and shadow the rest. Counterfactuals to
   // the one-pick-per-race stage strategies (see late-scan.ts).

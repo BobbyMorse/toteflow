@@ -18,6 +18,9 @@ export const MEASURE_ONLY_STRATEGY_IDS: ReadonlySet<string> = new Set([
   // measurement (they'd bankroll-dedup to shadow anyway). See tvg-baseline.ts.
   "tvg-steam-longshot",
   "tvg-steam-longshot-strict",
+  // Value-survived / continuation gate — fires only when fire-time EV ≥0. A
+  // subset of tvg-steam picks, run as pure parallel measurement.
+  "tvg-steam-evfloor",
 ]);
 
 export function isMeasureOnly(strategyId?: string | null): boolean {

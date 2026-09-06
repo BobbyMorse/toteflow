@@ -213,3 +213,21 @@ export const tvgSteamLongshotStrictStrategy: Strategy = {
   minFireOdds: 9.0,
   measureOnly: true,
 };
+
+// -------- Value-survived / continuation gate (2026-09 deep-dive) --------
+// The 15-35% crush routinely eats the model's own edge before we fire: the
+// median tvg-steam bet lands at capturedEV ~-12%, only ~10% at +EV. But those
+// value-survived fires are where the win signal lives — fire-EV>0 ran +53.8% ROI
+// with 79% of picks continuing to crush into the close, vs -0.9%/68% for the
+// -EV majority. Continuation (fire→close) can't be gated directly (it's a post-
+// outcome variable), so this gates its at-ENTRY proxy: require the model's honest
+// EV at the crushed fire price to still be non-negative. Measure-only; promote by
+// flipping measureOnly off. If it holds, fold the floor straight into tvg-steam.
+export const tvgSteamEVFloorStrategy: Strategy = {
+  ...build("tvg-steam-evfloor", "TVG Steam Value-Survived", ["thoroughbred"], calibrateTVGBaselineTrueP),
+  thesis:
+    "Steam-confirm entry, but fire only when the model's own EV at the crushed fire price is still ≥0 — i.e. the value survived the move. The at-entry proxy for continuation: informed money keeps coming when the pick was genuinely underpriced at our number. Measure-only.",
+  fireCrushBand: STEAM_BAND,
+  minFireEV: 0,
+  measureOnly: true,
+};
