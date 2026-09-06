@@ -61,12 +61,13 @@ export function sendSteamAlert(a: SteamAlert): void {
   let title: string;
   let desc: string;
   if (a.kind === "surfaced") {
-    title = `👀 SURFACED · ${a.trackCode} R${a.raceNumber} · ${who}`;
+    title = `👀 GET READY · ${a.trackCode} R${a.raceNumber} · ${who}`;
     desc =
       `Model likes this pick @ **${a.fractionalOdds}** (${a.decimalOdds.toFixed(2)}) · model EV **${evStr}**` +
       (a.trueP != null ? ` · model P **${(a.trueP * 100).toFixed(1)}%**` : "") +
-      `\nNot a bet yet — fires only if late money crushes the price **15-35%**.` +
-      `\n**[Monitor on ToteFlow →](${url})**`;
+      `\nNot a bet yet — get ready and watch the price live. Late money should crush it into the **15-35%** band.` +
+      `\n⚠️ The crush often eats the edge — **place only while it stays in the profitable zone** (model EV still ≥ 0 at the live price). The monitor's Steam Zone shows this live.` +
+      `\n**[Watch the Steam Zone →](${url})**`;
   } else {
     title = `🔥 FIRED · ${a.trackCode} R${a.raceNumber} · ${who}`;
     const crush = a.crushPct != null && a.stageOdds != null

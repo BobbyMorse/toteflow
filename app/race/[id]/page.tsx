@@ -7,6 +7,7 @@ import SharpMoneyMeter from "@/components/SharpMoneyMeter";
 import OverlayHeatmap from "@/components/OverlayHeatmap";
 import FinalFlash from "@/components/FinalFlash";
 import PoolFlow from "@/components/PoolFlow";
+import SteamZone from "@/components/SteamZone";
 import TicketBuilder from "@/components/TicketBuilder";
 import { StatusOrPhaseChip } from "@/components/RaceRowItem";
 import { fmtMoney, phaseOf } from "@/lib/format";
@@ -122,6 +123,7 @@ export default function RaceRoomPage({ params }: { params: Promise<{ id: string 
           </div>
         </div>
         <div className="space-y-4">
+          <SteamZone race={race}/>
           <SharpMoneyMeter runners={race.runners}/>
           <PoolFlow race={race}/>
           <TicketBuilder race={race}/>
