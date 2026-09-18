@@ -600,17 +600,22 @@ export function consensusTiers(): ConsensusTier[] {
 // Lets you ask "how does [tvg-baseline ∩ track-bias] perform specifically?"
 export function pairConsensus(): PairConsensus[] {
   const rows = db.prepare(`
-    WITH agreement AS (
-      SELECT raceId, selections,
-        (SELECT GROUP_CONCAT(s, ',')
-           FROM (SELECT DISTINCT strategyId AS s
-                   FROM tickets t2
-                   WHERE t2.raceId = t1.raceId AND t2.selections = t1.selections
-                     AND t2.strategyId IS NOT NULL
-                   ORDER BY strategyId)) AS strats,
-        COUNT(DISTINCT strategyId) AS sCount
-      FROM tickets t1
+    -- Dedup (raceId, selections, strategyId) first so each strategy counts once
+    -- per agreement group, then concat in a single grouped pass. The old form
+    -- used a correlated subquery that re-scanned the whole tickets table for
+    -- every group — the main cost of this page. Concat order is irrelevant:
+    -- the caller sorts the resulting strategy list in JS (see .sort() below).
+    WITH group_strats AS (
+      SELECT raceId, selections, strategyId
+      FROM tickets
       WHERE strategyId IS NOT NULL
+      GROUP BY raceId, selections, strategyId
+    ),
+    agreement AS (
+      SELECT raceId, selections,
+        GROUP_CONCAT(strategyId, ',') AS strats,
+        COUNT(*) AS sCount
+      FROM group_strats
       GROUP BY raceId, selections
       HAVING sCount >= 2
     )

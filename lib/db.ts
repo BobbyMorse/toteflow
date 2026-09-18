@@ -119,6 +119,11 @@ function applySchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_tickets_status   ON tickets(status);
     CREATE INDEX IF NOT EXISTS idx_tickets_race     ON tickets(raceId);
     CREATE INDEX IF NOT EXISTS idx_tickets_placedAt ON tickets(placedAt);
+    -- Consensus queries group and self-join tickets on (raceId, selections) to
+    -- find races where multiple strategies picked the same runner. Without this
+    -- composite index those joins fall back to full table scans per group,
+    -- which was the dominant cost of the /api/stats page (tens of seconds).
+    CREATE INDEX IF NOT EXISTS idx_tickets_race_sel ON tickets(raceId, selections);
 
     CREATE TABLE IF NOT EXISTS strategy_configs (
       id            TEXT PRIMARY KEY,
