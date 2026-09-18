@@ -12,6 +12,7 @@ const tabs = [
   { href: "/analytics",     label: "Analytics" },
   { href: "/config",        label: "Config" },
   { href: "/how-it-works",  label: "How It Works" },
+  { href: "/research",      label: "Post-Mortem" },
 ];
 
 export default function Nav() {
