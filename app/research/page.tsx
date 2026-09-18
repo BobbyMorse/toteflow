@@ -112,9 +112,11 @@ const roiColor = (v: Verdict) => (v === "loss" ? "text-accent-steam" : "text-ink
 
 // --- Steam cumulative-P&L chart (server-rendered SVG) ----------------------
 function SteamChart() {
-  const W = 760, H = 230, padL = 6, padR = 6, padT = 16, padB = 22;
+  const W = 760, H = 240, padL = 6, padR = 6, padT = 26, padB = 24;
   const vals = STEAM.map((d) => d[1]);
-  const ymin = -450, ymax = 1750;
+  // Ceiling well above the $1,632 peak so its two-line label has clear
+  // headroom inside the SVG and doesn't collide with the panel header.
+  const ymin = -450, ymax = 2200;
   const n = STEAM.length;
   const x = (i: number) => padL + (i / (n - 1)) * (W - padL - padR);
   const y = (v: number) => padT + (1 - (v - ymin) / (ymax - ymin)) * (H - padT - padB);
@@ -407,20 +409,21 @@ export default function ResearchPage() {
 
       {/* 06 — false positive */}
       <section className="space-y-5">
-        <SecHead n="06" label="A false positive: Daily Double Consensus" />
+        <SecHead n="06" label="An error, not a strategy: Daily Double Consensus" />
         <p className="text-ink-1 leading-relaxed text-[17px]">
-          One strategy showed a statistically significant <strong className="text-accent-overlay">+51% ROI</strong>{" "}
-          over 1,101 bets — on the dashboard, the only apparent edge in the program. It is excluded from the results
-          table above because it is not a real result, for two independent reasons.
+          This one was a mistake in the harness, not a strategy. It showed a statistically significant{" "}
+          <strong className="text-accent-overlay">+51% ROI</strong> over 1,101 bets — on the dashboard, the only
+          apparent edge in the program — and it should never have been counted. Two independent problems make it
+          invalid, and the first is disqualifying on its own.
         </p>
         <div className="grid sm:grid-cols-2 gap-3">
           <div className="panel p-5">
-            <p className="stat-label">Reason 1 — not placeable</p>
+            <p className="stat-label">Disqualifying — the bets can&apos;t be placed</p>
             <p className="text-ink-1 text-sm leading-relaxed mt-2 max-w-none">
               The strategy paired the model&apos;s top pick in two consecutive races into a Daily Double. But tracks
               only offer Daily Doubles on specific <em>designated</em> race pairs — typically the early daily double and
-              a few rolling doubles — not on every consecutive pair. Most of these tickets could never have been placed
-              at all.
+              a few rolling doubles — not on every consecutive pair. It generated tickets on pairs where no Daily Double
+              wager exists, so most of them could never have been placed. That is a bug in the strategy, not an edge.
             </p>
           </div>
           <div className="panel p-5">
@@ -433,9 +436,9 @@ export default function ResearchPage() {
           </div>
         </div>
         <p className="text-ink-1 leading-relaxed text-[17px]">
-          It is included here as a cautionary example: a large sample and a significant confidence interval are not
-          enough if the bets are not placeable and the payouts are not real. The harness quarantines estimated-payout
-          wins in a separate column specifically so a result like this cannot be mistaken for an edge.
+          It is excluded from the results above and kept here as a cautionary example: a large sample and a significant
+          confidence interval mean nothing if the bets could not be placed and the payouts are not real. The harness
+          separately quarantines estimated-payout wins so a result like this cannot be mistaken for an edge.
         </p>
       </section>
 
